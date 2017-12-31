@@ -1,0 +1,19 @@
+{
+  "name": "jslib",
+  "version": "1.0.0",
+  "description": "",
+  "main": "logger.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/felipefoliatti/jslib.git"
+  },
+  "author": "Felipe Foliatti",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/felipefoliatti/jslib/issues"
+  },
+  "homepage": "https://github.com/felipefoliatti/jslib#readme"
+}
