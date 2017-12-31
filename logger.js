@@ -11,9 +11,9 @@ class Logger {
 
     log(level, message){
         if(level == Tipo.ERROR || level == Tipo.FATAL){
-            console.error(message);
+            console.error({message: message, timestamp: new Date().toISOString(), level: level}); 
         } else {
-            console.info(message);
+            console.info({message: message, timestamp: new Date().toISOString(), level: level}); 
         }
     }
 }
