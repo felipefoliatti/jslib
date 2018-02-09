@@ -1,7 +1,5 @@
 'use strict';
 
-const mysql = require('mysql');
-
 class Logger {
     
     constructor(){
