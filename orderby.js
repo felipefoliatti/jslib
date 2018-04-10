@@ -2,13 +2,14 @@
 
 class Orderby {
 
-        
-    constructor(map){
-        this.map = map;
+    //config
+    //  single: true/false
+    constructor(config){
+        this.config = config;
     }
     
     parse (param) {
-        let valid = new RegExp(/^(([-+]\w+)|(\w+))(,(([-+]\w+)|(\w+)))*$/).test(param);
+        let valid = this.config.single? new RegExp(/^(([-+]\w+)|(\w+))*$/).test(param):new RegExp(/^(([-+]\w+)|(\w+))(,(([-+]\w+)|(\w+)))*$/).test(param);
         if(!valid) throw Error("invalid order") 
 
         let orders = param.split(',').map((field) =>{

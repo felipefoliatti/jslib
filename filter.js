@@ -7,11 +7,13 @@ class Filter {
         this.data = data;
         
         if(!data){
+            this.empty = true;
             this.field = "null"
             this.operator = "is"
             this.value = null;
         }
         else{
+
             let regex = new RegExp(/^([><])?(.+)$/);
             let valid = regex.test(data);
 
@@ -19,6 +21,7 @@ class Filter {
 
             let match = regex.exec(data);
 
+            this.empty = false;
             this.operator = match[1] || "=";
             this.value = match[2];
         }
