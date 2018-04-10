@@ -2,9 +2,10 @@
 
 class Filter {
     
-    constructor(field, data){
+    constructor(field, data, op){
         this.field =field;
         this.data = data;
+        this.op = op || [{in: "=", out: "="}, {in: "", out: "="}, {in: ">", out: ">"}, {in: "<", out: "<"}, {in: "!", out: "<>"}];
         
         if(!data){
             this.empty = true;
@@ -13,8 +14,8 @@ class Filter {
             this.value = null;
         }
         else{
-
-            let regex = new RegExp(/^([><])?(.+)$/);
+            let or = this.op.map(m => { return m.in }).join("|");
+            let regex = new RegExp(`^([${or}])?([a-zA-Z_]+)$`);
             let valid = regex.test(data);
 
             if(!valid) throw Error("invalid filter") 
@@ -22,7 +23,7 @@ class Filter {
             let match = regex.exec(data);
 
             this.empty = false;
-            this.operator = match[1] || "=";
+            this.operator = this.op.filter(e => e.in == match[1])[0].out;
             this.value = match[2];
         }
     }
