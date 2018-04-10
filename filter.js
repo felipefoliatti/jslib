@@ -15,7 +15,7 @@ class Filter {
         }
         else{
             let or = this.op.map(m => { return m.in }).join("|");
-            let regex = new RegExp(`^([${or}])?([a-zA-Z_]+)$`);
+            let regex = new RegExp(`^([${or}])?(.+)$`);
             let valid = regex.test(data);
 
             if(!valid) throw Error("invalid filter") 
