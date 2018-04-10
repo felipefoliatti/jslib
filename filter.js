@@ -23,7 +23,7 @@ class Filter {
             let match = regex.exec(data);
 
             this.empty = false;
-            this.operator = this.op.filter(e => e.in == match[1])[0].out;
+            this.operator = this.op.filter(e => e.in == (match[1] || "") )[0].out;
             this.value = match[2];
         }
     }
