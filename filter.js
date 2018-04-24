@@ -21,9 +21,12 @@ class Filter {
             if(!valid) throw Error("invalid filter") 
 
             let match = regex.exec(data);
+            let operators = this.op.filter(e => e.in == (match[1] || "") );
+
+            if (!operators) throw Error(`operator '${match[1]}' not found`);
 
             this.empty = false;
-            this.operator = this.op.filter(e => e.in == (match[1] || "") )[0].out;
+            this.operator = operators[0].out;
             this.value = match[2];
         }
     }
