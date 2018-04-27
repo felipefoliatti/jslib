@@ -5,16 +5,18 @@ class Logger {
     constructor(){
     }
 
-    log(level, message, optional){
+    _isObject(a) {
+        return (!!a) && (a.constructor === Object);
+    };
 
-        var m = {level: level, timestamp: new Date().toISOString(), message: message};
-        if (optional)m.optional = optional;
-        
+    log(obj){
 
-        if(level == Logger.Tipo.ERROR || level == Logger.Tipo.FATAL){
-            console.error(m); 
+        obj.timestamp = new Date().toISOString();                
+
+        if(obj.level == Logger.Tipo.ERROR || obj.level == Logger.Tipo.FATAL){
+            console.error(obj); 
         } else {
-            console.info(m); 
+            console.info(obj); 
         }
     }
 }
