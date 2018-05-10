@@ -40,7 +40,7 @@ class Orderby {
         }).join(",");
 
         //If there is some unallowed field
-        if(unallowed){
+        if(unallowed && unallowed.length){
             throw Error("invalid field: " + unallowed.join(",")); 
         }
 
