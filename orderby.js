@@ -29,7 +29,7 @@ class Orderby {
             } 
             
             //If exist some allowed field, consider it
-            if (me.config.allowed && me.config.allowed.indexOf(field) > -1){
+            if (me.config.allowed && me.config.allowed.indexOf(field) == -1){
                 unallowed.push(field);
             }
             
