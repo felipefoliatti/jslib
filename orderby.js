@@ -22,7 +22,8 @@ class Orderby {
         var unallowed = [];
         var me = this;
 
-        if(!valid) throw Error("invalid order");
+        //If there are some param and is not valid - empty param means 1
+        if(param && !valid) throw Error("invalid order");
 
         param = param || "";
         var orders = param.split(',').map((field) =>{
