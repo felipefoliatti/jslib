@@ -24,7 +24,7 @@ class Orderby {
 
         if(!valid) throw Error("invalid order");
 
-
+        param = param || "";
         var orders = param.split(',').map((field) =>{
             var order = "";
             if(field && field[0] == '-'){
