@@ -53,11 +53,11 @@ class Filter {
             let match = regex.exec(data);
             let operators = this.op.filter(e => e.in == (match[1] || "") );
 
-            if (!operators) throw Error(`operator '${match[1]}' not found`);
+            if (!operators.length) throw Error(`operator '${match[1]}' not found`);
 
             this.empty = false;
             this.operator = operators[0].out;
-            this.value = this.operator[0].fn? this.operator[0].fn(match[2]) : match[2];
+            this.value = operators[0].fn? operators[0].fn(match[2]) : match[2];
         }
     }
     
