@@ -25,35 +25,39 @@ class Orderby {
         //If there are some param and is not valid - empty param means 1
         if(param && !valid) throw Error("invalid order");
 
-        param = param || "";
-        var orders = param.split(',').map((field) =>{
-            var order = "";
-            if(field && field[0] == '-'){
-                order += " desc";
-                field = field.substring(1);
-            }
-            if(field && field[0] == '+'){
-                order += " asc";
-                field = field.substring(1);
-            } 
-            
-            //If exist some allowed field, consider it
-            if (me.config.allowed && me.config.allowed.indexOf(field) == -1){
-                unallowed.push(field);
-            }
-            
-            if(field){
-                order = field + order;
-            }
-            return order;
-        }).join(",");
+        
+        var orders = [];
+        
+        if(param){
+            orders = param.split(',').map((field) =>{
+                var order = "";
+                if(field && field[0] == '-'){
+                    order += " desc";
+                    field = field.substring(1);
+                }
+                if(field && field[0] == '+'){
+                    order += " asc";
+                    field = field.substring(1);
+                } 
+                
+                //If exist some allowed field, consider it
+                if (me.config.allowed && me.config.allowed.indexOf(field) == -1){
+                    unallowed.push(field);
+                }
+                
+                if(field){
+                    order = field + order;
+                }
+                return order;
+            }).join(",");
+        }
 
         //If there is some unallowed field
         if(unallowed && unallowed.length){
             throw Error("invalid field: " + unallowed.join(",")); 
         }
 
-        this.order = orders || (this.config.default || "1"); 
+        this.order = (orders && orders.length)? orders : (this.config.default || "1"); 
     }
 }
 
