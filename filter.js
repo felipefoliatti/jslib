@@ -18,7 +18,8 @@ class Filter {
      * Creates a new instance of a {@link Filter}. It has no methods, but has the fields above:
      * 
      * @property {String}  this.field the fieldname.
-     * @property {String}  this.operator  the operator.
+     * @property {String}  this.operator  the operator, that is calculated based on 'out'. If the field is null, operator will be IS. Otherwise will be what is specified in 'out'
+     * @property {String}  this.operation  the operatoration is based on 'out' and 'placeholder'. If the field is null, operation will be 'out' + ?. Otherwise will be 'out' + '(?)'.
      * @property {Object}  this.value the filter value.
      * 
      * @description
@@ -29,7 +30,7 @@ class Filter {
      * @param {Object[]} op the array of operations to eval against the param data.
      * @param {String} op[].in - the string searched in the parameter.
      * @param {String} op[].out the string returned in the {@link Filter#operator}.
-     * @param {Function} op[].fn the action used parse the value in {@link Filter#value}. It can be null
+     * @param {Function} op[].fn the action used parse the value in {@link Filter#value}. It can be null.
      * 
      */
     constructor(field, data, op){
@@ -41,6 +42,7 @@ class Filter {
             this.empty = true;
             this.field = "null"
             this.operator = "is"
+            this.operation = "is ?"
             this.value = null;
         }
         else{
@@ -57,6 +59,7 @@ class Filter {
 
             this.empty = false;
             this.operator = operators[0].out;
+            this.operation = operators[0].out + " (?)"
             this.value = operators[0].fn? operators[0].fn(match[2]) : match[2];
         }
     }
