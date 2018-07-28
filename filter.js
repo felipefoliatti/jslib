@@ -40,12 +40,13 @@ class Filter {
         this.field =field;
         this.data = data;
         this.op = op || [{in: "=", out: "=", fn: null}, {in: "", out: "=", fn: null}, {in: ">", out: ">", fn: null}, {in: "<", out: "<", fn: null}, {in: "!", out: "<>", fn: null}];
-        
+        this.config = config || {}
+
         if(!data){
             this.empty = true;
             this.field = "null"
             this.operator = "is"
-            this.operation = "is" + (this.placeholderEmpty? this.placeholderEmpty(this.data) : "(?) ")
+            this.operation = "is" + (this.config.placeholderEmpty? this.config.placeholderEmpty(this.data) : "(?) ")
             this.value = null;
         }
         else{
@@ -63,7 +64,7 @@ class Filter {
             this.empty = false;
             this.operator = operators[0].out;
             this.value = operators[0].fn? operators[0].fn(match[2]) : match[2];
-            this.operation = operators[0].out + (this.placeholderEmpty? this.placeholderEmpty(this.value) : " (?)")
+            this.operation = operators[0].out + (this.config.placeholderEmpty? this.config.placeholderEmpty(this.value) : " (?)")
         }
     }
     
