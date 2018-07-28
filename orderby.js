@@ -57,7 +57,8 @@ class Orderby {
             throw Error("invalid field: " + unallowed.join(",")); 
         }
 
-        this.order = (orders && orders.length)? orders : (this.config.default || "1"); 
+        //if this.config.deafult is set as null, this.order must be null. Only if not defined it will be "1"
+        this.order = (orders && orders.length)? orders : ( ("default" in this.config)? this.config : "1"); 
     }
 }
 
