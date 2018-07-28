@@ -31,9 +31,12 @@ class Filter {
      * @param {String} op[].in - the string searched in the parameter.
      * @param {String} op[].out the string returned in the {@link Filter#operator}.
      * @param {Function} op[].fn the action used parse the value in {@link Filter#value}. It can be null.
+     * @param {Object} config the config defines how the Filter will act
+     * @param {Function} config.placeholder function that receives the value (after fn) as argument and returns the placeholder
+     * @param {Function} config.placeholderEmpty function that receives the value (after fn) as argument and returns the placeholder when the data is empty 
      * 
      */
-    constructor(field, data, op){
+    constructor(field, data, op, config){
         this.field =field;
         this.data = data;
         this.op = op || [{in: "=", out: "=", fn: null}, {in: "", out: "=", fn: null}, {in: ">", out: ">", fn: null}, {in: "<", out: "<", fn: null}, {in: "!", out: "<>", fn: null}];
@@ -42,7 +45,7 @@ class Filter {
             this.empty = true;
             this.field = "null"
             this.operator = "is"
-            this.operation = "is ?"
+            this.operation = "is" + (this.placeholderEmpty? this.placeholderEmpty(this.data) : "(?) ")
             this.value = null;
         }
         else{
@@ -59,8 +62,8 @@ class Filter {
 
             this.empty = false;
             this.operator = operators[0].out;
-            this.operation = operators[0].out + " (?)"
             this.value = operators[0].fn? operators[0].fn(match[2]) : match[2];
+            this.operation = operators[0].out + (this.placeholderEmpty? this.placeholderEmpty(this.value) : " (?)")
         }
     }
     
