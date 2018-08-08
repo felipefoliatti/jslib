@@ -100,8 +100,8 @@ class Queue {
         var p = new Promise(function(resolve, reject){
             try{
                 var id = guid.raw();
-                me.mq.subscribe(me.conf.destination, fn, { id: id, ack: 'client-individual' });
-                resolve(id);
+                var subscritpion = me.mq.subscribe(me.conf.destination, fn, { id: id, ack: 'client-individual' });
+                resolve(subscritpion);
             }catch(e){
                 reject(e);
             }
