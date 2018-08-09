@@ -116,7 +116,7 @@ class Queue {
         var p = new Promise(function(resolve, reject){
             if(me.subscription){
                 try {
-                    me.mq.ack(mid, this.subscription);
+                    me.mq.ack(mid, me.subscription);
                     resolve();
                 }catch(e){
                     reject(e);
