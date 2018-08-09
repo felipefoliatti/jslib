@@ -16,6 +16,7 @@ class Queue {
         
         this.session = null;
         this.rdp = null;
+        this.subscription = null;
     }
 
     ready(){
@@ -100,8 +101,9 @@ class Queue {
         var p = new Promise(function(resolve, reject){
             try{
                 var id = guid.raw();
-                var subscritpion = me.mq.subscribe(me.conf.destination, fn, { id: id, ack: 'client-individual' });
-                resolve(subscritpion);
+                me.mq.subscribe(me.conf.destination, fn, { id: id, ack: 'client-individual' });
+                me.subscription = id;
+                resolve();
             }catch(e){
                 reject(e);
             }
@@ -109,18 +111,42 @@ class Queue {
         return p;    
     }
 
-    delete(mid, sid){
+    delete(mid){
         var me = this;
         var p = new Promise(function(resolve, reject){
-            try {
-                me.mq.ack(mid, sid);
-                resolve();
-            }catch(e){
-                reject(e);
+            if(me.subscription){
+                try {
+                    me.mq.ack(mid, this.subscription);
+                    resolve();
+                }catch(e){
+                    reject(e);
+                }
+            } else {
+                reject(new Error('no subscription active, call "subscribe" before'))
             }
         });
         return p;
     }
+
+    unsubscribe(){
+        var me = this;
+        var p = new Promise(function(resolve, reject){
+            if(me.subscription){
+                try {
+                    me.mq.unsubscribe(me.conf.destination);
+                    me.subscription = null;
+                    resolve();
+                }catch(e){
+                    reject(e);
+                }
+            } else {
+                reject(new Error('no subscription active, nothing to unsubscribe'))
+            }
+        });
+        return p;
+    }
+
+    
 
 }
 module.exports.Queue = Queue
