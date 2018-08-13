@@ -32,7 +32,7 @@ class Queue {
                         var options = {
                             'host': me.conf.host.replace("https://", "").replace("http://", ""),
                             'port': me.conf.port,
-                            'ssl': this.conf.host.match(/https/i)?true:false,
+                            'ssl': me.conf.host.match(/https/i)?true:false,
                             'connectHeaders':{
                               'login': me.conf.user,
                               'passcode': me.conf.password,
