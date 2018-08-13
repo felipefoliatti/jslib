@@ -197,6 +197,7 @@ class Queue {
                 try {
                     me.client.disconnect();
                     me.client = null;
+                    me.rdp = null;
                     resolve();
                 }catch(e){
                     reject(e);
