@@ -30,12 +30,12 @@ class Queue {
                     try {
             
                         var options = {
-                            'host': this.conf.host.replace("https://", "").replace("http://", ""),
-                            'port': this.conf.port,
-                            'ssl': this.conf.host.match(/https/i),
+                            'host': me.conf.host.replace("https://", "").replace("http://", ""),
+                            'port': me.conf.port,
+                            'ssl': me.conf.host.match(/https/i),
                             'connectHeaders':{
-                              'login': this.conf.user,
-                              'passcode': this.conf.password,
+                              'login': me.conf.user,
+                              'passcode': me.conf.password,
                               'heart-beat': '5000,5000'
                             }
                         };
