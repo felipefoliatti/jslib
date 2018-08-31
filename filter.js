@@ -38,7 +38,7 @@ class Filter {
      * 
      */
     constructor(field, data, op, config){
-        this.field = op.field || field;
+        this.field = config.field || field;
         this.data = data;
         this.op = op || [{in: "=", out: "=", fn: null}, {in: "", out: "=", fn: null}, {in: ">", out: ">", fn: null}, {in: "<", out: "<", fn: null}, {in: "!", out: "<>", fn: null}];
         this.config = config || {}
