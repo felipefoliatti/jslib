@@ -25,9 +25,11 @@ class Queue {
             var p = new Promise(function(resolve, reject){
             
                     try {
-                        me.mq.connect(function(session){
+                        me.mq.connect((session)=>{
                             me.session = session;
                             resolve();
+                        }, (err) => {
+                            console.error({timestamp: new Date().toISOString(), level: 'ERROR', message: 'from queue: ' + err.message + ' - ' + err.stack});
                         });
                         
                     }catch(e){
