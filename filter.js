@@ -32,12 +32,13 @@ class Filter {
      * @param {String} op[].out the string returned in the {@link Filter#operator}.
      * @param {Function} op[].fn the action used parse the value in {@link Filter#value}. It can be null.
      * @param {Object} config the config defines how the Filter will act
+     * @param {Function} config.field field that will be outputed - default is the field
      * @param {Function} config.placeholder function that receives the value (after fn) as argument and returns the placeholder
      * @param {Function} config.placeholderEmpty function that receives the value (after fn) as argument and returns the placeholder when the data is empty 
      * 
      */
     constructor(field, data, op, config){
-        this.field =field;
+        this.field = config.field || field;
         this.data = data;
         this.op = op || [{in: "=", out: "=", fn: null}, {in: "", out: "=", fn: null}, {in: ">", out: ">", fn: null}, {in: "<", out: "<", fn: null}, {in: "!", out: "<>", fn: null}];
         this.config = config || {}

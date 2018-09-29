@@ -1,6 +1,6 @@
 {
   "name": "jslib",
-  "version": "1.0.19",
+  "version": "1.0.22",
   "description": "",
   "main": "logger.js",
   "scripts": {
