@@ -141,8 +141,8 @@ class Queue {
                     //creates a new method to use async/await
                     message.content = new Promise(function(rs, rj){
                         message.readString('utf-8', function(error, body) {
-                            if(error) rs(error);
-                            rj(body);
+                            if(error) rj(error);
+                            else rs(body);
                         });
                     })
                     

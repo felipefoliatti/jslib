@@ -14,9 +14,9 @@ class Logger {
         obj.timestamp = new Date().toISOString();                
 
         if(obj.level == Logger.Tipo.ERROR || obj.level == Logger.Tipo.FATAL){
-            console.error(obj); 
+            console.error("%j", obj);  //for single-line (call stringify before print)
         } else {
-            console.info(obj); 
+            console.info("%j", obj); //for single-line (call stringify before print)
         }
     }
 }

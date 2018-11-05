@@ -17,6 +17,18 @@ class Queue {
         this.session = null;
         this.rdp = null;
         this.subscription = null;
+
+        var me = this;
+
+        this.mp.on('connect', ()=>{
+            console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - connect'});
+        });
+        this.mp.on('reconnect', ()=>{
+            console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - reconnect'});
+        });
+        this.mp.on('error', (err)=>{
+            console.error('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - ' + err.message + ' - ' + err.stack});
+        });
     }
 
     ready(){
@@ -29,7 +41,7 @@ class Queue {
                             me.session = session;
                             resolve();
                         }, (err) => {
-                            console.error({timestamp: new Date().toISOString(), level: 'ERROR', message: 'from queue: ' + err.message + ' - ' + err.stack});
+                            console.error('%j',{timestamp: new Date().toISOString(), level: 'ERROR', message: 'from ' + me.conf.destination + ' - ' + err.message + ' - ' + err.stack});
                         });
                         
                     }catch(e){
