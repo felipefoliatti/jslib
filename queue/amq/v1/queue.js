@@ -20,13 +20,13 @@ class Queue {
 
         var me = this;
 
-        this.mp.on('connect', ()=>{
+        this.mq.on('connect', ()=>{
             console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - connect'});
         });
-        this.mp.on('reconnect', ()=>{
+        this.mq.on('reconnect', ()=>{
             console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - reconnect'});
         });
-        this.mp.on('error', (err)=>{
+        this.mq.on('error', (err)=>{
             console.error('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - ' + err.message + ' - ' + err.stack});
         });
     }
