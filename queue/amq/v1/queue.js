@@ -1,6 +1,6 @@
 'use strict';
 
-const Stomp  = require('stomp-client');
+const Stomp  = require('stomp-client'); //https://github.com/ahudak/node-stomp-client
 const guid = require('guid');
 
 class Queue {
@@ -11,7 +11,7 @@ class Queue {
         //this.queueSufix = queueSufix;
         //this.visibilityTimeout = visibilityTimeout;
         //this.mq = new Stomp('127.0.0.1', 61613, 'user', 'pass'); //new aws.SQS({region:this.conf.region, endpoint: this.conf.endpoint, credentials : new aws.Credentials(this.conf.key, this.conf.secret)});
-        this.mq = new Stomp(this.conf.host.replace("https://", "").replace("http://", ""), this.conf.port, this.conf.user, this.conf.password, "1.0", null, {retries: 10, delay:1000}, this.conf.host.match(/https/i)? {}: null); 
+        this.mq = new Stomp(this.conf.host.replace("https://", "").replace("http://", ""), this.conf.port, this.conf.user, this.conf.password, "1.1", null, {retries: 10, delay:1000}, this.conf.host.match(/https/i)? {}: null,'1000,1000'); 
         this.status = "not-connected";
         
         this.session = null;
