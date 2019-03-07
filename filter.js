@@ -65,7 +65,7 @@ class Filter {
             this.empty = false;
             this.operator = operators[0].out;
             this.value = operators[0].fn? operators[0].fn(match[2]) : match[2];
-            this.operation = operators[0].out + (this.config.placeholder? this.config.placeholder(this.value) : " ? ")
+            this.operation = operators[0].out + (this.config.placeholder? this.config.placeholder(this.value) : " (?) ")
         }
     }
     
