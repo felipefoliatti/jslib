@@ -11,19 +11,26 @@ class Queue {
         //this.queueSufix = queueSufix;
         //this.visibilityTimeout = visibilityTimeout;
         //this.mq = new Stomp('127.0.0.1', 61613, 'user', 'pass'); //new aws.SQS({region:this.conf.region, endpoint: this.conf.endpoint, credentials : new aws.Credentials(this.conf.key, this.conf.secret)});
-        this.mq = new Stomp(this.conf.host.replace("https://", "").replace("http://", ""), this.conf.port, this.conf.user, this.conf.password, "1.1", null, {retries: 10, delay:1000}, this.conf.host.match(/https/i)? {}: null,'1000,1000'); 
+        this.mq = new Stomp(this.conf.host.replace("https://", "").replace("http://", ""), this.conf.port, this.conf.user, this.conf.password, "1.1", null, {retries: 10, delay:1000}, this.conf.host.match(/https/i)? {}: null,'1000,2000'); 
         this.status = "not-connected";
         
+        this.connected = false;
         this.session = null;
         this.rdp = null;
         this.subscription = null;
 
         var me = this;
 
+        this.mq.on('end', ()=>{
+            me.connected = false;
+            console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - disconnected'});
+        });
         this.mq.on('connect', ()=>{
+            me.connected = true;
             console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - connect'});
         });
         this.mq.on('reconnect', ()=>{
+            me.connected = true;
             console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - reconnect'});
         });
         this.mq.on('error', (err)=>{
@@ -96,10 +103,30 @@ class Queue {
         //return p;
     }
 
+    alive(){
+        return !this.mq.stream.connecting && this.mq.stream.writable && this.connected;
+    }
+
     send(content) {
+
         var id = guid.raw();
-        this.mq.publish(this.conf.destination, content, {'persistent': true, 'content-type': 'application/json', 'correlation-id': id});
-        return id;
+        var sent = false;
+
+        if (this.alive()){
+            this.mq.publish(this.conf.destination, content, {'persistent': true, 'content-type': 'application/json', 'correlation-id': id});    
+            //check again to garantee the connection is alive before return the confirmation id
+            sent = this.alive();  
+        } 
+        
+        if (sent){
+            return id;
+        } else {
+            var err = new Error('unable to write to queue')
+            this.mq.stream.emit('error', err)
+            throw err;
+        }
+
+       
         // var param = {MessageBody: content, QueueUrl: this.url};
         
         // if(this.isFifo) {
