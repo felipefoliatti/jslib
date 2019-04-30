@@ -10,7 +10,8 @@ class Database {
         this.user= config.user;
         this.password = config.password;
         this.host= config.host;
-        this.port = config.port; 
+        this.port = config.port;
+        this.multiple = config.multiple;
     }
 
     query(sql, values){
@@ -21,10 +22,11 @@ class Database {
                 
                 if(!this.pool){
                     this.pool = mysql.createPool({  
-                            host     : me.host,
-                            user     : me.user,
-                            password : me.password,
-                            database : me.database
+                        host              : me.host,
+                        user              : me.user,
+                        password          : me.password,
+                        database          : me.database,
+                        multipleStatements: me.multiple||false
                     });
                 }
                 
