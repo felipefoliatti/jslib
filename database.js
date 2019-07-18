@@ -12,6 +12,7 @@ class Database {
         this.host= config.host;
         this.port = config.port;
         this.multiple = config.multiple;
+        this.connectionLimit = config.connectionLimit;
     }
 
     query(sql, values){
@@ -22,6 +23,7 @@ class Database {
                 
                 if(!this.pool){
                     this.pool = mysql.createPool({  
+                        connectionLimit   : me.connectionLimit || 1,
                         host              : me.host,
                         user              : me.user,
                         password          : me.password,
@@ -33,6 +35,7 @@ class Database {
                 this.pool.getConnection(function(err, con) {
                     
                     if(err){
+                        con.release();
                         reject(err);
                     }
                     else {
@@ -47,7 +50,7 @@ class Database {
                         });
                     }
                     
-                    me.pool.end();
+                    //me.pool.end();
                 });
             }catch(err){
                 reject(err);
