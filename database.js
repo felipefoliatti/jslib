@@ -47,7 +47,7 @@ class Database {
                         });
                     }
                     
-                    this.pool.end();
+                    me.pool.end();
                 });
             }catch(err){
                 reject(err);
