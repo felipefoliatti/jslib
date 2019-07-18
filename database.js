@@ -47,6 +47,7 @@ class Database {
                         });
                     }
                     
+                    this.pool.end();
                 });
             }catch(err){
                 reject(err);
