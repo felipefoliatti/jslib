@@ -13,18 +13,11 @@ class Orderby {
      * @param {Boolean}  [config.single=false] the boolean value indicating if this order clause accept many orders (separated by ,) or just one
      * @param {String[]} [config.allowed=[]] the array of allowed fields to sort. If empty, any field is allowed
      * @param {String}   [config.default=1] the default value if the sort is empty
-     * @param {String}   [config.mapping=[]] the mapping map containing in and out fields     
+     * @param {String}   [config.default=1] map the the received user's column to database column
      * 
      */
     constructor(param, config){
         this.config = config;
-        
-        var mapping=[];
-        if(config.mapping){
-            config.mapping.forEach(element => {
-               mapping[element.in] = element.out; 
-            });
-        }
 
         var valid = this.config.single? new RegExp(/^(([-+]\w+)|(\w+))*$/).test(param):new RegExp(/^(([-+]\w+)|(\w+))(,(([-+]\w+)|(\w+)))*$/).test(param);
         var unallowed = [];
@@ -54,7 +47,11 @@ class Orderby {
                 }
                 
                 if(field){
-                    order = (mapping[field] || field) + order;
+                    if (me.config.map){
+                        order = me.config.map[field] + order;
+                    } else {
+                        order = field + order;
+                    }
                 }
                 return order;
             }).join(",");
@@ -65,8 +62,7 @@ class Orderby {
             throw Error("invalid field: " + unallowed.join(",")); 
         }
 
-        //if this.config.deafult is set as null, this.order must be null. Only if not defined it will be "1"
-        this.order = (orders && orders.length)? orders : ( ("default" in this.config)? this.config.default : "1"); 
+        this.order = (orders && orders.length)? orders : (this.config.default || "1"); 
     }
 }
 
