@@ -7,17 +7,22 @@ class Queue {
 
     constructor(conf){
         this.conf = conf;
-        //this.queueName = queueName;
-        //this.queueSufix = queueSufix;
-        //this.visibilityTimeout = visibilityTimeout;
-        //this.mq = new Stomp('127.0.0.1', 61613, 'user', 'pass'); //new aws.SQS({region:this.conf.region, endpoint: this.conf.endpoint, credentials : new aws.Credentials(this.conf.key, this.conf.secret)});
+        this.saction = Function();//empty subscription action
+
+        this.create();
+        this.connect();
+    }
+
+    create(){
         this.mq = new Stomp(this.conf.host.replace("https://", "").replace("http://", ""), this.conf.port, this.conf.user, this.conf.password, "1.1", null, {retries: 10, delay:1000}, this.conf.host.match(/https/i)? {}: null,'1000,2000'); 
         this.status = "not-connected";
+        
+        this.solver = Function(); //connection solver - notify the connect promise that is now connected
         
         this.connected = false;
         this.session = null;
         this.rdp = null;
-        this.subscription = null;
+        this.subscription = null;        
 
         var me = this;
 
@@ -31,30 +36,45 @@ class Queue {
         });
         this.mq.on('reconnect', ()=>{
             me.connected = true;
+            me.solver(); //informs that connected (or reconnected)
             console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - reconnect'});
         });
         this.mq.on('error', (err)=>{
             console.error('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - ' + err.message + ' - ' + err.stack});
+            
+            if (err.message.includes("[reconnect attempts reached]")){
+                me.connected = false;
+
+                this.mq.removeAllListeners();
+                this.mq.on('error', (err)=>{}); //supress
+
+                console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'reconnecting...'});
+                this.mq.disconnect();
+                me.rdp = null;
+                this.create(); //connect
+                this.connect().then(() => this.saction()); //redo the subscriptions
+            }
         });
     }
 
-    ready(){
+    connect(){
         var me = this;
-        if(!me.rdp){
-            var p = new Promise(function(resolve, reject){
-            
-                    try {
-                        me.mq.connect((session)=>{
-                            me.session = session;
-                            resolve();
-                        }, (err) => {
-                            console.error('%j',{timestamp: new Date().toISOString(), level: 'ERROR', message: 'from ' + me.conf.destination + ' - ' + err.message + ' - ' + err.stack});
-                        });
-                        
-                    }catch(e){
-                        me.rdp = null;
-                        reject(e);
-                    }
+
+       if(!me.rdp){
+            var p = new Promise(function(resolve, reject){       
+                me.solver = resolve;     //store the solver - if the connections has errors to connect instantly, then is the reconnect event that is raised - reconnect does not trigger the resolve() - we store to trigger manually 
+                try {                   
+                    me.mq.connect((session)=>{
+                        me.session = session;
+                        resolve();
+                    }, (err) => {
+                        console.error('%j',{timestamp: new Date().toISOString(), level: 'ERROR', message: 'from ' + me.conf.destination + ' - ' + err.message + ' - ' + err.stack});
+                    });
+                    
+                }catch(e){
+                    me.rdp = null;
+                    reject(e);
+                }
         
             });
 
@@ -65,58 +85,24 @@ class Queue {
             return me.rdp;
         }
         
-           
-            // client.subscribe(destination, function(body, headers) {
-            //   console.log('This is the body of a message on the subscribed queue:', body);
-            // });
-        
-            // client.publish(destination, 'Oh herrow');
-
-
-        // var me = this;
-        // var p = new Promise(function(resolve, reject){     
-        //     if(me.url){
-        //         resolve();
-        //     }
-        //     else{
-        //         me.sqs.listQueues({QueueNamePrefix : me.conf.queueName})
-        //                 .promise()
-        //                 .then(function (result){
-        //                         if(result.QueueUrls){
-        //                             return { QueueUrl: result.QueueUrls[0] }
-        //                         }
-
-        //                         var attr = { 'VisibilityTimeout':  me.conf.visibilityTimeout && me.conf.visibilityTimeout.toString() || '30' };
-        //                         if(me.isFifo) attr.FifoQueue= 'true';
-
-        //                         return me.sqs.createQueue({ QueueName : me.conf.queueName + me.conf.queueSufix, Attributes: attr}).promise();
-        //                     })
-        //                     .then(function(result){
-        //                         me.url = result.QueueUrl;
-        //                         resolve();
-        //                     })
-        //                     .catch(function(err){
-        //                         reject(err);
-        //                     });
-        //     }
-        // });
-        //return p;
+    
     }
 
     alive(){
-        return !this.mq.stream.connecting && this.mq.stream.writable && this.connected;
+        return this.connected && !this.mq.stream.connecting && this.mq.stream.writable;
     }
 
     send(content) {
 
         var id = guid.raw();
         var sent = false;
-
+            
         if (this.alive()){
-            this.mq.publish(this.conf.destination, content, {'persistent': true, 'content-type': 'application/json', 'correlation-id': id});    
+            //try to send
+            this.mq.publish(this.conf.destination, content, {'persistent': true, 'content-type': 'application/json', 'correlation-id': id});               
             //check again to garantee the connection is alive before return the confirmation id
             sent = this.alive();  
-        } 
+        }
         
         if (sent){
             return id;
@@ -125,31 +111,27 @@ class Queue {
             this.mq.stream.emit('error', err)
             throw err;
         }
-
-       
-        // var param = {MessageBody: content, QueueUrl: this.url};
-        
-        // if(this.isFifo) {
-        //     param.MessageDeduplicationId = guid.raw();
-        //     param.MessageGroupId= 'main';
-        // }
-        
-        // return this.sqs.sendMessage(param).promise();
     }
 
     subscribe(fn){
         var me = this;
-        var p = new Promise(function(resolve, reject){
-            try{
-                var id = guid.raw();
-                me.mq.subscribe(me.conf.destination, fn, { id: id, ack: 'client-individual' });
-                me.subscription = id;
-                resolve();
-            }catch(e){
-                reject(e);
-            }
-        });
-        return p;    
+        //store the subscription action - when reconnect - it will be called again
+        this.saction=()=> {
+            console.log("redoing!!")            
+            var p = new Promise(function(resolve, reject){
+                try{
+                    var id = guid.raw();
+                    me.mq.subscribe(me.conf.destination, fn, { id: id, ack: 'client-individual' });
+                    me.subscription = id;
+                    resolve();
+                }catch(e){
+                    reject(e);
+                }
+            });
+            return p;    
+        }
+        //run the subscribe
+        return this.saction();
     }
 
     delete(mid){
@@ -157,6 +139,7 @@ class Queue {
         var p = new Promise(function(resolve, reject){
             if(me.subscription){
                 try {
+                    this.saction = Function(); //clear the subscription action if any
                     me.mq.ack(mid, me.subscription);
                     resolve();
                 }catch(e){
