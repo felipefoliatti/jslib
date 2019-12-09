@@ -117,7 +117,7 @@ class Queue {
         var me = this;
         //store the subscription action - when reconnect - it will be called again
         this.saction=()=> {
-            console.log("redoing!!")            
+
             var p = new Promise(function(resolve, reject){
                 try{
                     var id = guid.raw();
