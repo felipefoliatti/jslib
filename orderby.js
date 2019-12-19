@@ -62,7 +62,7 @@ class Orderby {
             throw Error("invalid field: " + unallowed.join(",")); 
         }
 
-        this.order = (orders && orders.length)? orders : (this.config.default || "1"); 
+        this.order = (orders && orders.length)? orders : ((this.config.default==undefined)? "1":this.config.default ); 
     }
 }
 
