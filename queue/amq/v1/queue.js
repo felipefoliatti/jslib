@@ -116,7 +116,7 @@ class Queue {
     subscribe(fn){
         var me = this;
         //store the subscription action - when reconnect - it will be called again
-        this.saction=()=> {
+        me.saction=()=> {
 
             var p = new Promise(function(resolve, reject){
                 try{
@@ -131,7 +131,7 @@ class Queue {
             return p;    
         }
         //run the subscribe
-        return this.saction();
+        return me.saction();
     }
 
     delete(mid){
@@ -139,7 +139,7 @@ class Queue {
         var p = new Promise(function(resolve, reject){
             if(me.subscription){
                 try {
-                    this.saction = Function(); //clear the subscription action if any
+                    me.saction = Function(); //clear the subscription action if any
                     me.mq.ack(mid, me.subscription);
                     resolve();
                 }catch(e){
