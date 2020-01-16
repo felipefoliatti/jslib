@@ -36,7 +36,7 @@ class Migrator {
                     
                         await marv.migrate(migrations, driver({connection}));
 
-                        conn.end();
+                        //conn.end();
                         conn.destroy();
                         resolve();
     
