@@ -14,7 +14,7 @@ class Queue {
     }
 
     create(){
-        this.mq = new Stomp(this.conf.host.replace("https://", "").replace("http://", ""), this.conf.port, this.conf.user, this.conf.password, "1.1", null, {retries: 10, delay:1000}, this.conf.host.match(/https/i)? {}: null,'1000,2000'); 
+        this.mq = new Stomp(this.conf.host.replace("https://", "").replace("http://", ""), this.conf.port, this.conf.user, this.conf.password, "1.1", null, {retries: 10, delay:1000}, '5000,10000'); 
         this.status = "not-connected";
         
         this.solver = Function(); //connection solver - notify the connect promise that is now connected
@@ -95,22 +95,18 @@ class Queue {
     send(content) {
 
         var id = guid.raw();
-        var sent = false;
+        var promise;
             
-        if (this.alive()){
-            //try to send
-            this.mq.publish(this.conf.destination, content, {'persistent': true, 'content-type': 'application/json', 'correlation-id': id});               
-            //check again to garantee the connection is alive before return the confirmation id
-            sent = this.alive();  
-        }
-        
-        if (sent){
-            return id;
+        //check if it is able to send
+        if (this.alive()){         
+            //try to send it and wait the promise resolve with server response           
+            promise = this.mq.publish(this.conf.destination, content, {'persistent': true, 'content-type': 'application/json', 'correlation-id': id});               
+            return promise.then(e => id); //return the id
         } else {
-            var err = new Error('unable to write to queue')
-            this.mq.stream.emit('error', err)
-            throw err;
+            //if it is unable to send, reject with an error
+            return Promise.reject(new Error('unable to write to queue'));
         }
+
     }
 
     subscribe(fn){

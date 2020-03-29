@@ -15,6 +15,86 @@ class Database {
         this.connectionLimit = config.connectionLimit;
     }
 
+    queries(queries){
+        var me = this;
+        var p = new Promise((resolve, reject)=>{
+            
+            try{
+                
+                if(!this.pool){
+                    this.pool = mysql.createPool({  
+                        connectionLimit   : me.connectionLimit || 1,
+                        host              : me.host,
+                        user              : me.user,
+                        password          : me.password,
+                        database          : me.database,
+                        multipleStatements: me.multiple||false
+                    });
+                }
+                
+                this.pool.getConnection(function(err, con) {
+                         
+                    if(err){
+                        con.release();
+                        reject(err);
+                    }
+                    else {
+                    
+                        try {
+
+                            const results = {};
+                            conn.beginTransaction((err) => {
+                                if (err) {
+                                    reject(err);
+                                }
+    
+                                // Loop through all queries
+                                for (var i in queries) {
+                                    var query = queries[i];
+    
+                                    con.query(query.sql, query.values, (err, queryResults, fields) => {
+                                        // If the query errored, then rollback and reject
+                                        if (err) {
+                                            // Try catch the rollback end reject if the rollback fails
+                                            conn.rollback((err) => {
+                                                throw err;
+                                            });
+                                            
+                                        }
+                                        // Push the result into an array and index it with the ID passed for searching later
+                                        results[i] = {
+                                            result: queryResults,
+                                            fields: fields,
+                                        };
+                                    });
+                                }
+                
+                                // If all loops have itterated and no errors, then commit
+                                this.connection.commit((err) => {
+                                    if (err) {
+                                        throw e;
+                                    }
+                                    resolve(results);
+                                });
+                            });
+                        } catch (error) {
+                            con.release();
+                            reject(error);
+                        }
+
+                    }
+                    
+                    con.release();
+                    resolve(aresults);
+                    //me.pool.end();
+                });
+            }catch(err){
+                reject(err);
+            }
+        });
+        return p;
+    }
+
     query(sql, values){
         var me = this;
         var p = new Promise((resolve, reject)=>{
