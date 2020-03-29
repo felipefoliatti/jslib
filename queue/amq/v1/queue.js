@@ -30,6 +30,10 @@ class Queue {
             me.connected = false;
             console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - disconnected'});
         });
+        this.mq.on('reconnecting', ()=>{
+            me.connected = false;
+            console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - reconnecting'});
+        });
         this.mq.on('connect', ()=>{
             me.connected = true;
             console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - connect'});
