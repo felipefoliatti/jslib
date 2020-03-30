@@ -14,7 +14,7 @@ class Queue {
     }
 
     create(){
-        this.mq = new Stomp(this.conf.host.replace("https://", "").replace("http://", ""), this.conf.port, this.conf.user, this.conf.password, "1.1", null, {retries: 10, delay:1000}, '5000,10000'); 
+        this.mq = new Stomp(this.conf.host.replace("https://", "").replace("http://", ""), this.conf.port, this.conf.user, this.conf.password, "1.1", null, {retries: 10, delay:1000}, '5000,10000', this.conf.host.match(/https/i)? {}: null); 
         this.status = "not-connected";
         
         this.solver = Function(); //connection solver - notify the connect promise that is now connected
