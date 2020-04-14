@@ -91,7 +91,7 @@ class Database {
                     }
                     
                    
-                    resolve(aresults);
+                    resolve(results);
                     //me.pool.end();
                 });
             }catch(err){
