@@ -32,67 +32,69 @@ class Database {
                     });
                 }
                 
-                this.pool.getConnection(function(err, conn) {
+                this.pool.getConnection(function(err, con) {
                          
                     if(err){
-                        conn.release();
+                        con.release();
                         reject(err);
                     }
                     else {
                     
                         try {
 
-                            const results = {};
-                            var error = false;
-                             
-                            conn.beginTransaction((err) => {
-                                if (err) {
-                                    error = true;
-                                    reject(err);
-                                } else {
-    
-                                     // Loop through all queries
-                                     for (var i in queries) {
-                                         var query = queries[i];
+                            var results = [];
+                            con.beginTransaction((err) => {
+                                
+                                var run = (i) => {
+                                    if (queries[i]){
+                                        //run one more
+                                        con.query(queries[i].sql, queries[i].values, (err, queryResults, fields) => {
+                                            if (!err){
+                                                
+                                                results[i] = {
+                                                    result: queryResults,
+                                                    fields: fields,
+                                                };
 
-                                         conn.query(query.sql, query.values, (err, queryResults, fields) => {
-                                             // If the query errored, then rollback and reject
-                                             if (err) {
-                                                 // Try catch the rollback end reject if the rollback fails
-                                                 conn.rollback((err) => {
-                                                     throw err;
-                                                 });
+                                                //run one more
+                                                run(++i);
 
-                                             }
-                                             // Push the result into an array and index it with the ID passed for searching later
-                                             results[i] = {
-                                                 result: queryResults,
-                                                 fields: fields,
-                                             };
-                                         });
-                                     }
+                                            } else {
+                                                con.rollback(err => {});
+                                                con.release();
+                                                reject(err);
+                                            }
+                                        });
 
-                                     // If all loops have itterated and no errors, then commit
-                                     this.connection.commit((err) => {
-                                         if (err) {
-                                             throw e;
-                                         }
-                                         resolve(results);
-                                     });
+                                    } else {
+                                        //all run successfull
+                                        con.commit(err => {
+                                            con.release();
+                                            if (err){
+                                                reject(err);
+                                            } else {
+                                                resolve(results);
+                                            }
+                                        });
 
-                                     conn.release();
-                                }
+                                    }
+
+                                    
+                                };
+
+                                //start
+                                run(0);
+                                
                             });
 
-                            if(!error) resolve(results);
-                             
-                            //me.pool.end();   
                         } catch (error) {
-                            conn.release();
+                            con.release();
                             reject(error);
                         }
                     }
+                    //me.pool.end();
                 });
+
             }catch(err){
                 reject(err);
             }
