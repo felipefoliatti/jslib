@@ -43,8 +43,11 @@ class Database {
                         try {
 
                             const results = {};
+                            var error = false;
+                             
                             conn.beginTransaction((err) => {
                                 if (err) {
+                                    error = true;
                                     reject(err);
                                 } else {
     
@@ -81,18 +84,14 @@ class Database {
                                 }
                             });
 
-                                 
-                            
+                            if(!error) resolve(results);
+                             
+                            //me.pool.end();   
                         } catch (error) {
                             con.release();
                             reject(error);
                         }
-
                     }
-                    
-                   
-                    resolve(results);
-                    //me.pool.end();
                 });
             }catch(err){
                 reject(err);
