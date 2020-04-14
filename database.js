@@ -46,37 +46,40 @@ class Database {
                             conn.beginTransaction((err) => {
                                 if (err) {
                                     reject(err);
-                                }
+                                } else {
     
-                                // Loop through all queries
-                                for (var i in queries) {
-                                    var query = queries[i];
-    
-                                    con.query(query.sql, query.values, (err, queryResults, fields) => {
-                                        // If the query errored, then rollback and reject
-                                        if (err) {
-                                            // Try catch the rollback end reject if the rollback fails
-                                            conn.rollback((err) => {
-                                                throw err;
-                                            });
-                                            
-                                        }
-                                        // Push the result into an array and index it with the ID passed for searching later
-                                        results[i] = {
-                                            result: queryResults,
-                                            fields: fields,
-                                        };
-                                    });
-                                }
-                
-                                // If all loops have itterated and no errors, then commit
-                                this.connection.commit((err) => {
-                                    if (err) {
-                                        throw e;
-                                    }
-                                    resolve(results);
-                                });
-                            });
+                                     // Loop through all queries
+                                     for (var i in queries) {
+                                         var query = queries[i];
+
+                                         con.query(query.sql, query.values, (err, queryResults, fields) => {
+                                             // If the query errored, then rollback and reject
+                                             if (err) {
+                                                 // Try catch the rollback end reject if the rollback fails
+                                                 conn.rollback((err) => {
+                                                     throw err;
+                                                 });
+
+                                             }
+                                             // Push the result into an array and index it with the ID passed for searching later
+                                             results[i] = {
+                                                 result: queryResults,
+                                                 fields: fields,
+                                             };
+                                         });
+                                     }
+
+                                     // If all loops have itterated and no errors, then commit
+                                     this.connection.commit((err) => {
+                                         if (err) {
+                                             throw e;
+                                         }
+                                         resolve(results);
+                                     });
+                                 });
+
+                                 con.release();
+                            }
                         } catch (error) {
                             con.release();
                             reject(error);
@@ -84,7 +87,7 @@ class Database {
 
                     }
                     
-                    con.release();
+                   
                     resolve(aresults);
                     //me.pool.end();
                 });
