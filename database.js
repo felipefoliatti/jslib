@@ -76,10 +76,13 @@ class Database {
                                          }
                                          resolve(results);
                                      });
-                                 });
 
-                                 con.release();
-                            }
+                                     con.release();
+                                }
+                            });
+
+                                 
+                            
                         } catch (error) {
                             con.release();
                             reject(error);
