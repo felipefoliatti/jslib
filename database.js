@@ -32,10 +32,10 @@ class Database {
                     });
                 }
                 
-                this.pool.getConnection(function(err, con) {
+                this.pool.getConnection(function(err, conn) {
                          
                     if(err){
-                        con.release();
+                        conn.release();
                         reject(err);
                     }
                     else {
@@ -55,7 +55,7 @@ class Database {
                                      for (var i in queries) {
                                          var query = queries[i];
 
-                                         con.query(query.sql, query.values, (err, queryResults, fields) => {
+                                         conn.query(query.sql, query.values, (err, queryResults, fields) => {
                                              // If the query errored, then rollback and reject
                                              if (err) {
                                                  // Try catch the rollback end reject if the rollback fails
@@ -80,7 +80,7 @@ class Database {
                                          resolve(results);
                                      });
 
-                                     con.release();
+                                     conn.release();
                                 }
                             });
 
@@ -88,7 +88,7 @@ class Database {
                              
                             //me.pool.end();   
                         } catch (error) {
-                            con.release();
+                            conn.release();
                             reject(error);
                         }
                     }
