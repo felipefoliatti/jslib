@@ -42,52 +42,59 @@ class Database {
                     
                         try {
 
-                            const results = {};
-                            conn.beginTransaction((err) => {
-                                if (err) {
-                                    reject(err);
-                                }
-    
-                                // Loop through all queries
-                                for (var i in queries) {
-                                    var query = queries[i];
-    
-                                    con.query(query.sql, query.values, (err, queryResults, fields) => {
-                                        // If the query errored, then rollback and reject
-                                        if (err) {
-                                            // Try catch the rollback end reject if the rollback fails
-                                            conn.rollback((err) => {
-                                                throw err;
-                                            });
-                                            
-                                        }
-                                        // Push the result into an array and index it with the ID passed for searching later
-                                        results[i] = {
-                                            result: queryResults,
-                                            fields: fields,
-                                        };
-                                    });
-                                }
-                
-                                // If all loops have itterated and no errors, then commit
-                                this.connection.commit((err) => {
-                                    if (err) {
-                                        throw e;
+                            var results = [];
+                            con.beginTransaction((err) => {
+                                
+                                var run = (i) => {
+                                    if (queries[i]){
+                                        //run one more
+                                        con.query(queries[i].sql, queries[i].values, (err, queryResults, fields) => {
+                                            if (!err){
+                                                
+                                                results[i] = {
+                                                    result: queryResults,
+                                                    fields: fields,
+                                                };
+
+                                                //run one more
+                                                run(++i);
+
+                                            } else {
+                                                con.rollback(err => {});
+                                                con.release();
+                                                reject(err);
+                                            }
+                                        });
+
+                                    } else {
+                                        //all run successfull
+                                        con.commit(err => {
+                                            con.release();
+                                            if (err){
+                                                reject(err);
+                                            } else {
+                                                resolve(results);
+                                            }
+                                        });
+
                                     }
-                                    resolve(results);
-                                });
+
+                                    
+                                };
+
+                                //start
+                                run(0);
+                                
                             });
+
                         } catch (error) {
                             con.release();
                             reject(error);
                         }
-
                     }
-                    
-                    con.release();
-                    resolve(aresults);
                     //me.pool.end();
                 });
+
             }catch(err){
                 reject(err);
             }
