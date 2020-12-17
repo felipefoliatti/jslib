@@ -55,10 +55,10 @@ class Queue {
                 console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'reconnecting...'});
                 this.mq.disconnect();
                 me.rdp = null;
+                
                 this.create(); //connect
                 this.connect()
-                    .then(() => this.saction()).then(()=> console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - resubscribed'}))
-                    .catch(e => console.info('%j',{timestamp: new Date().toISOString(), level: 'ERROR', message: e.toString()})); //redo the subscriptions
+                    .then(() => this.saction()).then(()=> console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - resubscribed'}));//redo the subscriptions
             }
         });
     }
