@@ -35,7 +35,7 @@ class Database {
                 this.pool.getConnection(function(err, con) {
                          
                     if(err){
-                        con.release();
+                        if(con) con.release();
                         reject(err);
                     }
                     else {
@@ -88,7 +88,7 @@ class Database {
                             });
 
                         } catch (error) {
-                            con.release();
+                            if(con) con.release();
                             reject(error);
                         }
                     }
@@ -122,7 +122,7 @@ class Database {
                 this.pool.getConnection(function(err, con) {
                     
                     if(err){
-                        con.release();
+                        if(con)con.release();
                         reject(err);
                     }
                     else {
