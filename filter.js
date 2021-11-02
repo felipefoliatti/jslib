@@ -59,7 +59,7 @@ class Filter {
 
             let match = regex.exec(data);
             //let operators = this.op.filter(e => e.in == (match[1] || "") );
-            let operators = this.op.filter(e => data.startsWith(e.in) || e.in == "");
+            let operators = this.op.filter(e => data.startsWith(e.in) || e.in == "").reverse(); //the first find is the last item
 
             if (!operators.length) throw Error(`operator '${match[1]}' not found`);
 
