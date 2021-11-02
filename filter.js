@@ -51,14 +51,7 @@ class Filter {
             this.value = null;
         }
         else{
-            let or = this.op.map(m => { return m.in }).join("|");
-            let regex = new RegExp(`^([${or}])?(.+)$`);
-            let valid = regex.test(data);
-
-            if(!valid) throw Error("invalid filter") 
-
-            let match = regex.exec(data);
-            let operators = this.op.filter(e => e.in == (match[1] || "") );
+            let operators = this.op.filter(e => query.startsWith(e.in) || e.in == "")[0];
 
             if (!operators.length) throw Error(`operator '${match[1]}' not found`);
 
