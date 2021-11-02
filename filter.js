@@ -51,7 +51,7 @@ class Filter {
             this.value = null;
         }
         else{
-            let operators = this.op.filter(e => query.startsWith(e.in) || e.in == "")[0];
+            let operators = this.op.filter(e => data.startsWith(e.in) || e.in == "")[0];
 
             if (!operators.length) throw Error(`operator '${match[1]}' not found`);
 
