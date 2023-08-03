@@ -80,7 +80,7 @@ class Filter {
             context.value = [{data: undefined, expand: false}];
         }else{
            
-            let operators = this.op.filter(e => context.value.startsWith(e.in) || e.in == "").reverse(); //the first find is the last item            
+            let operators = this.op.filter(e => context.value.toString().startsWith(e.in) || e.in == "").reverse(); //the first find is the last item            
 
             if (!operators.length) throw Error(`operator in '${context.value}' not found`);
             let operator = operators[0];    
