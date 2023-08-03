@@ -130,4 +130,5 @@ class Filter {
   }
 }  
 
+
 module.exports.Filter = Filter
