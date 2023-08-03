@@ -11,7 +11,6 @@
  * 
  * @class Filter
  */
-
 class Filter {
 
     static OP = {
@@ -62,7 +61,7 @@ class Filter {
   
       this.operation = '';
       this.value = [];
-
+      
       //make the value always an array
       if (!Array.isArray(value)){
         value = [value]
@@ -72,8 +71,7 @@ class Filter {
       for(let i=0; i < value.length; i ++){
         
         let context = { field: this.field, value: value[i] };
-  
-        if(!context.value){
+        if(!context.value || (Array.isArray(context.value) && !context.value.length)){
             context.empty = true;
             context.field = "null"
             context.operator = "is"
@@ -109,6 +107,8 @@ class Filter {
         contexts.push(context);
       }
   
+      if (!contexts.length) contexts.push({operation: '(NULL IS NULL)', value: [], expand: false});
+
       this.operation = `(${contexts.map(e => e.operation).join(' AND ')})`;
       this.value = []
       
