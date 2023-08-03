@@ -28,8 +28,10 @@ class Filter {
       INT: {
         EQ:  (opt) => Filter.assign({in: "", out: "=", fn: (e)=> e.replace(/\s/g,''), placeholder: '?' },               opt, {custom: false}),
         IN:  (opt) => Filter.assign({in: "", out: "in", fn: (e)=> e.replace(/\s/g,'').split(','), placeholder: '(?)' }, opt, {custom: false}),
-        GT:  (opt) => Filter.assign({in: "", out: ">=", fn: (e)=> e.replace(/\s/g,''), placeholder: '?' },              opt, {custom: false}),
-        LT:  (opt) => Filter.assign({in: "", out: "<=", fn: (e)=> e.replace(/\s/g,''), placeholder: '?' },              opt, {custom: false}),
+        GT:  (opt) => Filter.assign({in: "", out: ">", fn: (e)=> e.replace(/\s/g,''), placeholder: '?' },               opt, {custom: false}),
+        GTE: (opt) => Filter.assign({in: "", out: ">=", fn: (e)=> e.replace(/\s/g,''), placeholder: '?' },              opt, {custom: false}),
+        LT:  (opt) => Filter.assign({in: "", out: "<", fn: (e)=> e.replace(/\s/g,''), placeholder: '?' },               opt, {custom: false}),
+        LTE: (opt) => Filter.assign({in: "", out: "<=", fn: (e)=> e.replace(/\s/g,''), placeholder: '?' },              opt, {custom: false}),
         NEQ: (opt) => Filter.assign({in: "", out: "<>", fn: null, placeholder: '?'}, opt),
       },
       CUSTOM: (opt) => Filter.assign({in: "", query: (value)=>"", fn: (e)=> e.replace(/\s/g,'') }, opt, {custom: true})
