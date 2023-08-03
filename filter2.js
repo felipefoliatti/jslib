@@ -11,38 +11,39 @@
  * 
  * @class Filter
  */
+
 class Filter {
 
     static OP = {
       STRING: {
-        EQ:  (opt) => Filter.assign({in: "", out: "=",   fn: (e)=> ({data: e.replace(/\s/g,''), expand: false}),             placeholder: '?' },   opt, {custom: false}),
-        IN:  (opt) => Filter.assign({in: "", out: "in",  fn: (e)=> ({data: e.replace(/\s/g,'').split(','), expand: false}),  placeholder: '(?)' }, opt, {custom: false}),
-        LK:  (opt) => Filter.assign({in: "", out: "like",fn: (e)=> ({data: e.enclose("%"), expand: false}),                  placeholder: '?' },   opt, {custom: false}),        
-        NEQ: (opt) => Filter.assign({in: "", out: "<>",  fn: (e)=> ({data: e.replace(/\s/g,''), expand: false}),             placeholder: '?'},    opt, {custom: false}),
+        EQ:  (opt) => Filter.assign({in: "", out: "=",   fn: (e)=> ({data: e.toString().replace(/\s/g,''),            expand: false}), placeholder: '?' },   opt, {custom: false}),
+        IN:  (opt) => Filter.assign({in: "", out: "in",  fn: (e)=> ({data: e.toString().replace(/\s/g,'').split(','), expand: false}), placeholder: '(?)' }, opt, {custom: false}),
+        LK:  (opt) => Filter.assign({in: "", out: "like",fn: (e)=> ({data: e.toString().enclose("%"),                 expand: false}), placeholder: '?' },   opt, {custom: false}),        
+        NEQ: (opt) => Filter.assign({in: "", out: "<>",  fn: (e)=> ({data: e.toString().replace(/\s/g,''),            expand: false}), placeholder: '?'},    opt, {custom: false}),
       },
       BOOL: {
-        IN:  (opt) => Filter.assign({in: "", out: "in", fn: (e)=> ({data: e.replace(/\s/g,'').split(','), expand: false}), placeholder: '(?)' }, opt, {custom: false}),
-        EQ:  (opt) => Filter.assign({in: "", out: "=",  fn: (e)=> ({data: e.replace(/\s/g,''), expand: false}),            placeholder: '?' },   opt, {custom: false}),        
-        NEQ: (opt) => Filter.assign({in: "", out: "<>", fn: (e)=> ({data: e.replace(/\s/g,''), expand: false}),            placeholder: '?'},    opt, {custom: false}),
+        IN:  (opt) => Filter.assign({in: "", out: "in", fn: (e)=> ({data: e.toString().replace(/\s/g,'').split(','), expand: false}), placeholder: '(?)' }, opt, {custom: false}),
+        EQ:  (opt) => Filter.assign({in: "", out: "=",  fn: (e)=> ({data: e.toString().replace(/\s/g,''),            expand: false}), placeholder: '?'   }, opt, {custom: false}),        
+        NEQ: (opt) => Filter.assign({in: "", out: "<>", fn: (e)=> ({data: e.toString().replace(/\s/g,''),            expand: false}), placeholder: '?'   }, opt, {custom: false}),
       },
       INT: {
-        EQ:  (opt) => Filter.assign({in: "", out: "=",  fn: (e)=> ({data: e.replace(/\s/g,''), expand: false}),            placeholder: '?'   }, opt, {custom: false}),
-        IN:  (opt) => Filter.assign({in: "", out: "in", fn: (e)=> ({data: e.replace(/\s/g,'').split(','), expand: false}), placeholder: '(?)' }, opt, {custom: false}),
-        GT:  (opt) => Filter.assign({in: "", out: ">",  fn: (e)=> ({data: e.replace(/\s/g,''), expand: false}),            placeholder: '?'   }, opt, {custom: false}),
-        GTE: (opt) => Filter.assign({in: "", out: ">=", fn: (e)=> ({data: e.replace(/\s/g,''), expand: false}),            placeholder: '?'   }, opt, {custom: false}),
-        LT:  (opt) => Filter.assign({in: "", out: "<",  fn: (e)=> ({data: e.replace(/\s/g,''), expand: false}),            placeholder: '?'   }, opt, {custom: false}),
-        LTE: (opt) => Filter.assign({in: "", out: "<=", fn: (e)=> ({data: e.replace(/\s/g,''), expand: false}),            placeholder: '?'   }, opt, {custom: false}),
-        NEQ: (opt) => Filter.assign({in: "", out: "<>", fn: (e)=> ({data: e.replace(/\s/g,''), expand: false}),            placeholder: '?'   }, opt),
+        EQ:  (opt) => Filter.assign({in: "", out: "=",  fn: (e)=> ({data: parseInt(e.toString().replace(/\s/g,'')),                        expand: false}), placeholder: '?'   }, opt, {custom: false}),
+        IN:  (opt) => Filter.assign({in: "", out: "in", fn: (e)=> ({data: e.toString().replace(/\s/g,'').split(',').map(e => parseInt(e)), expand: false}), placeholder: '(?)' }, opt, {custom: false}),
+        GT:  (opt) => Filter.assign({in: "", out: ">",  fn: (e)=> ({data: parseInt(e.toString().replace(/\s/g,'')),                        expand: false}), placeholder: '?'   }, opt, {custom: false}),
+        GTE: (opt) => Filter.assign({in: "", out: ">=", fn: (e)=> ({data: parseInt(e.toString().replace(/\s/g,'')),                        expand: false}), placeholder: '?'   }, opt, {custom: false}),
+        LT:  (opt) => Filter.assign({in: "", out: "<",  fn: (e)=> ({data: parseInt(e.toString().replace(/\s/g,'')),                        expand: false}), placeholder: '?'   }, opt, {custom: false}),
+        LTE: (opt) => Filter.assign({in: "", out: "<=", fn: (e)=> ({data: parseInt(e.toString().replace(/\s/g,'')),                        expand: false}), placeholder: '?'   }, opt, {custom: false}),
+        NEQ: (opt) => Filter.assign({in: "", out: "<>", fn: (e)=> ({data: parseInt(e.toString().replace(/\s/g,'')),                        expand: false}), placeholder: '?'   }, opt),
       },
       DATE: {
-        EQ:  (opt) => Filter.assign({in: "", out: "=",                                                                                                 fn: (e)=> ({data: e.replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
-        GT:  (opt) => Filter.assign({in: "", out: ">",                                                                                                 fn: (e)=> ({data: e.replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
-        GTE: (opt) => Filter.assign({in: "", out: ">=",                                                                                                fn: (e)=> ({data: e.replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
-        LT:  (opt) => Filter.assign({in: "", out: "<",                                                                                                 fn: (e)=> ({data: e.replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
-        LTE: (opt) => Filter.assign({in: "", out: "<=",                                                                                                fn: (e)=> ({data: e.replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
-        BTW: (opt) => Filter.assign({in: "", lop: ">=", rop: "<=", query: (value, operator)=> `:field ${operator.lop} ? AND :field ${operator.rop} ?`, fn: (e)=> ({data: Filter.require(e.replace(/\s/g,'').split(','),2), expand: true}) }, opt, {custom: true}),
+        EQ:  (opt) => Filter.assign({in: "", out: "=",                                                                                                 fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
+        GT:  (opt) => Filter.assign({in: "", out: ">",                                                                                                 fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
+        GTE: (opt) => Filter.assign({in: "", out: ">=",                                                                                                fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
+        LT:  (opt) => Filter.assign({in: "", out: "<",                                                                                                 fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
+        LTE: (opt) => Filter.assign({in: "", out: "<=",                                                                                                fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
+        BTW: (opt) => Filter.assign({in: "", lop: ">=", rop: "<=", query: (value, operator)=> `:field ${operator.lop} ? AND :field ${operator.rop} ?`, fn: (e)=> ({data: Filter.require(e.toString().replace(/\s/g,'').split(','),2), expand: true}) }, opt, {custom: true}),
       },
-      CUSTOM: (opt) => Filter.assign({in: "", query: ()=>"", fn: (e)=>  ({data: e.replace(/\s/g,''), expand: false}) }, opt, {custom: true})
+      CUSTOM: (opt) => Filter.assign({in: "", query: ()=>"", fn: (e)=>  ({data: e.toString().replace(/\s/g,''), expand: false}) }, opt, {custom: true})
     }
   
     static assign(...objects){
@@ -86,7 +87,7 @@ class Filter {
             let operator = operators[0];    
             
             //clear the data removing the prefix
-            context.value = context.value.slice(operator.in.length);
+            context.value = context.value.toString().slice(operator.in.length);
 
             if (!operator.custom){
               let value = operator.fn? operator.fn(context.value) : {data: context.value, expand: false};
@@ -129,6 +130,5 @@ class Filter {
       
   }
 }  
-
 
 module.exports.Filter = Filter
