@@ -71,7 +71,7 @@ class Filter {
       for(let i=0; i < value.length; i ++){
         
         let context = { field: this.field, value: value[i] };
-        if(!context.value || (Array.isArray(context.value) && !context.value.length)){
+        if(context.value === null || context.value === undefined || context.value === '' || (Array.isArray(context.value) && !context.value.length)){
             context.empty = true;
             context.field = "null"
             context.operator = "is"
