@@ -40,9 +40,9 @@ class Filter {
         GTE: (opt) => Filter.assign({in: "", out: ">=",                                                                                                fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
         LT:  (opt) => Filter.assign({in: "", out: "<",                                                                                                 fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
         LTE: (opt) => Filter.assign({in: "", out: "<=",                                                                                                fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
-        BTW: (opt) => Filter.assign({in: "", lop: ">=", rop: "<=", query: (value, operator)=> `:field ${operator.lop} ? AND :field ${operator.rop} ?`, fn: (e)=> ({data: Filter.require(e.toString().replace(/\s/g,'').split(','),2), expand: true}) }, opt, {custom: true}),
+        BTW: (opt) => Filter.assign({in: "", lop: ">=", rop: "<=", query: {fn: (value, operator)=> `:field ${operator.lop} ? AND :field ${operator.rop} ?`, expand: false, join: 'AND'}, fn: (e)=> ({data: Filter.require(e.toString().replace(/\s/g,'').split(','),2), expand: true}) }, opt, {custom: true}),
       },
-      CUSTOM: (opt) => Filter.assign({in: "", query: ()=>"", fn: (e)=>  ({data: e.toString().replace(/\s/g,''), expand: false}) }, opt, {custom: true})
+      CUSTOM: (opt) => Filter.assign({in: "", query: {fn: ()=>"", expand: false, join: 'AND'}, fn: (e)=>  ({data: e.toString().replace(/\s/g,''), expand: false}) }, opt, {custom: true})
     }
   
     static assign(...objects){
@@ -61,6 +61,8 @@ class Filter {
   
       this.operation = '';
       this.value = [];
+
+      let getPlaceholders = (query) => (query.match(/\?/g)||[]);
       
       //make the value always an array
       if (!Array.isArray(value)){
@@ -95,12 +97,14 @@ class Filter {
               context.operation = `(${context.field} ${operator.out} ${operator.placeholder})`;
             } else {
               let value = operator.fn? operator.fn(context.value) : {data: context.value, expand: false}; 
-              let query = operator.query(value.data, operator)
+              
+              let query = operator.query.fn(value.data, operator).replace(/\:field/g, this.field);
+              let queries = operator.query.expand? value.data.map(() => query) : [query]; //query.expand means that we and to replicate the query as many items we have in the data array.
               
               context.empty = false;
               context.operator = null;
-              context.value = value.expand? [value] : (query.match(/\?/g)||[]).map(() => value); //if we don't need to expand it, we have to fill the ? with data
-              context.operation = `(${query.replace(/\:field/g, this.field)})`;
+              context.value = value.expand? [value] : queries.map(query => getPlaceholders(query).map(() => value)).flat(); //value.exapnd means the params is an array and will be added item by item, expecting to have ? as many items we have in the data array. If we don't need to expand it, we have to fill the ? with the array
+              context.operation = `(${queries.join(` ${operator.query.join} `)})`;
             }
         }
   
