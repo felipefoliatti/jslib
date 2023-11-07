@@ -103,7 +103,7 @@ class Filter {
               
               context.empty = false;
               context.operator = null;
-              context.value = value.expand? [value] : queries.map(query => getPlaceholders(query).map(() => value)).flat(); //value.exapnd means the params is an array and will be added item by item, expecting to have ? as many items we have in the data array. If we don't need to expand it, we have to fill the ? with the array
+              context.value = !value.expand? [value] : queries.map(query => getPlaceholders(query).map(() => value)).flat(); //value.exapnd means the params is an array and will be added item by item, expecting to have ? as many items we have in the data array. If we don't need to expand it, we have to fill the ? with the array
               context.operation = `(${queries.join(` ${operator.query.join} `)})`;
             }
         }
