@@ -34,13 +34,21 @@ class Filter {
         LTE: (opt) => Filter.assign({in: "", out: "<=", fn: (e)=> ({data: parseInt(e.toString().replace(/\s/g,'')),                        expand: false}), placeholder: '?'   }, opt, {custom: false}),
         NEQ: (opt) => Filter.assign({in: "", out: "<>", fn: (e)=> ({data: parseInt(e.toString().replace(/\s/g,'')),                        expand: false}), placeholder: '?'   }, opt),
       },
-      DATE: {
+      DATETIME: {
         EQ:  (opt) => Filter.assign({in: "", out: "=",                                                                                                 fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
         GT:  (opt) => Filter.assign({in: "", out: ">",                                                                                                 fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
         GTE: (opt) => Filter.assign({in: "", out: ">=",                                                                                                fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
         LT:  (opt) => Filter.assign({in: "", out: "<",                                                                                                 fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
         LTE: (opt) => Filter.assign({in: "", out: "<=",                                                                                                fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: '?' },           opt, {custom: false}),
         BTW: (opt) => Filter.assign({in: "", lop: ">=", rop: "<=", query: {fn: (value, operator)=> `:field ${operator.lop} ? AND :field ${operator.rop} ?`, expand: false, join: 'AND'}, fn: (e)=> ({data: Filter.require(e.toString().replace(/\s/g,'').split(','),2), expand: true}) }, opt, {custom: true}),
+      },
+      DATE: {
+        EQ:  (opt) => Filter.assign({in: "", out: "=",  field: 'DATE(:field)',                                                                                                                       fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: 'DATE(?)' },           opt, {custom: false}),
+        GT:  (opt) => Filter.assign({in: "", out: ">",  field: 'DATE(:field)',                                                                                                                       fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: 'DATE(?)' },           opt, {custom: false}),
+        GTE: (opt) => Filter.assign({in: "", out: ">=", field: 'DATE(:field)',                                                                                                                       fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: 'DATE(?)' },           opt, {custom: false}),
+        LT:  (opt) => Filter.assign({in: "", out: "<",  field: 'DATE(:field)',                                                                                                                       fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: 'DATE(?)' },           opt, {custom: false}),
+        LTE: (opt) => Filter.assign({in: "", out: "<=", field: 'DATE(:field)',                                                                                                                       fn: (e)=> ({data: e.toString().replace(/\s/g,''), expand: false}), placeholder: 'DATE(?)' },           opt, {custom: false}),
+        BTW: (opt) => Filter.assign({in: "", lop: ">=", rop: "<=", query: {fn: (value, operator)=> `DATE(:field) ${operator.lop} DATE(?) AND DATE(:field) ${operator.rop} DATE(?)`, expand: false, join: 'AND'}, fn: (e)=> ({data: Filter.require(e.toString().replace(/\s/g,'').split(','),2), expand: true}) }, opt, {custom: true}),
       },
       CUSTOM: (opt) => Filter.assign({in: "", query: {fn: ()=>"", expand: false, join: 'AND'}, fn: (e)=>  ({data: e.toString().replace(/\s/g,''), expand: false}) }, opt, {custom: true})
     }
@@ -72,7 +80,7 @@ class Filter {
       let contexts = [];
       for(let i=0; i < value.length; i ++){
         
-        let context = { field: this.field, value: value[i] };
+        let context = { value: value[i] };
         if(context.value === null || context.value === undefined || context.value === '' || (Array.isArray(context.value) && !context.value.length)){
             context.empty = true;
             context.field = "null"
@@ -91,6 +99,8 @@ class Filter {
 
             if (!operator.custom){
               let value = operator.fn? operator.fn(context.value) : {data: context.value, expand: false};
+              
+              context.field = operator.field? operator.field.replace(/\:field/g, this.field) : this.field;
               context.empty = false;
               context.operator = operator.out;
               context.value = [value];
@@ -101,6 +111,7 @@ class Filter {
               let query = operator.query.fn(value.data, operator).replace(/\:field/g, this.field);
               let queries = operator.query.expand? value.data.map(() => query) : [query]; //query.expand means that we and to replicate the query as many items we have in the data array.
               
+              context.field = this.field;
               context.empty = false;
               context.operator = null;
               context.value = value.expand? [value] : queries.map(query => getPlaceholders(query).map(() => value)).flat(); //value.exapnd means the params is an array and will be added item by item, expecting to have ? as many items we have in the data array. If we don't need to expand it, we have to fill the ? with the array
