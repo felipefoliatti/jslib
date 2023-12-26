@@ -43,19 +43,25 @@ class Cache {
 
         //subscribe to topic 
         this.topic.subscribe((data) =>{
-            let objects = Array.isArray(data)? data : [data];
-            
-            //iterate over messages 
-            for(let i in objects){
-                var object = JSON.parse(objects[i]);
-                if (object.type == 1 || object.type == 2){
-                    
-                    let id = this.handler.topic(object);
-                    let entry = `${key}:${id}`;
+            try{
+                var odata = JSON.parse(data);
+                let objects = Array.isArray(odata)? odata : [odata];
+                
+                //iterate over messages 
+                for(let i in objects){
+                    var object = objects[i];
 
-                    console.log(`${new Date().toISOString()} - cache deleted ${entry}`);
-                    this.cache.del(entry);
+                    if (object.type == 1 || object.type == 2){
+                        
+                        let id = this.handler.topic(object);
+                        let entry = `${key}:${id}`;
+
+                        console.log(`${key} - ${new Date().toISOString()} - cache deleted ${entry}`);
+                        this.cache.del(entry);
+                    }
                 }
+            } catch(ex){
+                console.log(`${key} - ${new Date().toISOString()} - wrong data received: ${data}`);
             }
         });
     }   
