@@ -30,7 +30,8 @@ class Cache {
     // }
 
     static unique(array){
-        let distinct = new Set(array);
+        let items = array.filter(Boolean); //remove empty entries
+        let distinct = new Set(items);
         return Array.from(distinct) 
     }
   
