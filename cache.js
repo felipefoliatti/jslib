@@ -45,20 +45,23 @@ class Cache {
         //subscribe to topic 
         this.topic.subscribe((data) =>{
             try{
-                var odata = JSON.parse(data);
-                let objects = Array.isArray(odata)? odata : [odata];
-                
-                //iterate over messages 
-                for(let i in objects){
-                    var object = objects[i];
+                //can receive null for keep-alive
+                if (data){
+                    var odata = JSON.parse(data);
+                    let objects = Array.isArray(odata)? odata : [odata];
+                    
+                    //iterate over messages 
+                    for(let i in objects){
+                        var object = objects[i];
 
-                    if (object.type == 1 || object.type == 2){
-                        
-                        let id = this.handler.topic(object);
-                        let entry = `${key}:${id}`;
+                        if (object.type == 1 || object.type == 2){
+                            
+                            let id = this.handler.topic(object);
+                            let entry = `${key}:${id}`;
 
-                        console.log(`${key} - ${new Date().toISOString()} - cache deleted ${entry}`);
-                        this.cache.del(entry);
+                            console.log(`${key} - ${new Date().toISOString()} - cache deleted ${entry}`);
+                            this.cache.del(entry);
+                        }
                     }
                 }
             } catch(ex){
