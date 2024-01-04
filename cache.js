@@ -46,7 +46,7 @@ class Cache {
         this.topic.subscribe((data) =>{
             try{
                 //can receive null for keep-alive
-                if (data){
+                if (data != null && data != "null"){
                     var odata = JSON.parse(data);
                     let objects = Array.isArray(odata)? odata : [odata];
                     
