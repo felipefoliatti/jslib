@@ -13,6 +13,7 @@ class Cache {
     key = null;
     fn = null;
     handler = null;
+    chunk = null;
 
     static fn = {
         DEFAULT_REQUEST: ({uri, version, limit}={}) => (async ({company, keys}={}) => await request({method: 'GET', uri: uri, qs: { version: (version || '1'), company: company, id: keys.join(','), limit: (limit || '*') },json: true})),
@@ -35,12 +36,13 @@ class Cache {
         return Array.from(distinct) 
     }
   
-    constructor({cache, topic, key, fn, handler}={}){
+    constructor({cache, topic, key, fn, handler, chunk}={}){
         this.cache = cache;
         this.topic = topic;
         this.key = key;
         this.fn = fn;
         this.handler = handler;
+        this.chunk = chunk || 100;
 
         //subscribe to topic 
         this.topic.subscribe((data) =>{
@@ -93,10 +95,23 @@ class Cache {
         if (missing.length){
             try{
                 //request missing items
-                let response = await this.fn({company: company, keys: missing});
+                let data = [];
+                let i = 0;
+
+                //chunk reads
+                do{
+                    let keys = missing.slice(i, i + this.chunk);
+                    let response = await this.fn({company: company, keys: keys});
+                    //process the response
+                    let odata = this.handler.response.getData(response);
+                    //append to array
+                    data.push(...odata);
+                    //sum the read items
+                    i = i + this.chunk;
+                } 
+                while(i < missing.length);
             
-                //process the response
-                let data = this.handler.response.getData(response)
+                // let data = this.handler.response.getData(response);
             
                 //iterate over item and cache it
                 for (let i=0; i < data.length; i++){
