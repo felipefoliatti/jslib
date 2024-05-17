@@ -18,6 +18,7 @@ class Filter {
         EQ:  (opt) => Filter.assign({in: "", out: "=",   fn: (e)=> ({data: e.toString().replace(/\s/g,''),            expand: false}), placeholder: '?' },   opt, {custom: false}),
         IN:  (opt) => Filter.assign({in: "", out: "in",  fn: (e)=> ({data: e.toString().replace(/\s/g,'').split(','), expand: false}), placeholder: '(?)' }, opt, {custom: false}),
         LK:  (opt) => Filter.assign({in: "", out: "like",fn: (e)=> ({data: e.toString().enclose("%"),                 expand: false}), placeholder: '?' },   opt, {custom: false}),        
+        LKE: (opt) => Filter.assign({in: "", out: "like",fn: (e)=> ({data: e.toString().concat("%"),                  expand: false}), placeholder: '?' },   opt, {custom: false}),        
         NEQ: (opt) => Filter.assign({in: "", out: "<>",  fn: (e)=> ({data: e.toString().replace(/\s/g,''),            expand: false}), placeholder: '?'},    opt, {custom: false}),
       },
       BOOL: {
