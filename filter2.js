@@ -22,9 +22,9 @@ class Filter {
         NEQ: (opt) => Filter.assign({in: "", out: "<>",  fn: (e)=> ({data: e.toString().replace(/\s/g,''),            expand: false}), placeholder: '?'},    opt, {custom: false}),
       },
       BOOL: {
-        IN:  (opt) => Filter.assign({in: "", out: "in", fn: (e)=> ({data: e.toString().replace(/\s/g,'').split(','), expand: false}), placeholder: '(?)' }, opt, {custom: false}),
-        EQ:  (opt) => Filter.assign({in: "", out: "=",  fn: (e)=> ({data: e.toString().replace(/\s/g,''),            expand: false}), placeholder: '?'   }, opt, {custom: false}),        
-        NEQ: (opt) => Filter.assign({in: "", out: "<>", fn: (e)=> ({data: e.toString().replace(/\s/g,''),            expand: false}), placeholder: '?'   }, opt, {custom: false}),
+        IN:  (opt) => Filter.assign({in: "", out: "in", fn: (e)=> ({data: e.toString().replace(/\s/g,'').split(',').map(e => JSON.parse(e)?1:0), expand: false}), placeholder: '(?)' }, opt, {custom: false}),
+        EQ:  (opt) => Filter.assign({in: "", out: "=",  fn: (e)=> ({data: JSON.parse(e.toString().replace(/\s/g,''))?1:0,                        expand: false}), placeholder: '?'   }, opt, {custom: false}),        
+        NEQ: (opt) => Filter.assign({in: "", out: "<>", fn: (e)=> ({data: JSON.parse(e.toString().replace(/\s/g,''))?1:0,                        expand: false}), placeholder: '?'   }, opt, {custom: false}),
       },
       INT: {
         EQ:  (opt) => Filter.assign({in: "", out: "=",  fn: (e)=> ({data: parseInt(e.toString().replace(/\s/g,'')),                        expand: false}), placeholder: '?'   }, opt, {custom: false}),
