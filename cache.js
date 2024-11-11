@@ -7,45 +7,80 @@ const request = require('request-promise-native');
  */
 
 class Cache {
-
-    topic = null;
     cache = null;
+    
     key = null;
+    segregator = null;
+    
     fn = null;
+    topic = null;
+
     handler = null;
     chunk = null;
 
     static fn = {
-        DEFAULT_REQUEST: ({uri, version, limit}={}) => (async ({company, keys}={}) => await request({method: 'GET', uri: uri, qs: { version: (version || '1'), company: company, id: keys.join(','), limit: (limit || '*') },json: true})),
-        DEFAULT_RESPONSE_HANDLER: { getData: (response) => response.data, getKey: (item) => item.id },
-        DEFAULT_TOPIC_ID_HANDLER: (object) => object.id,
+        DEFAULT_REQUEST: ({uri, key, version, limit}) =>
+            (async function ({segregator, keys}={}) { 
+                return await request({
+                    method: 'GET', 
+                    uri: uri, 
+                    qs: { 
+                        version: (version || '1'), 
+                        [this.segregator]: Array.isArray(segregator)? segregator.join(',') : segregator, 
+                        [key ?? 'id']: keys.join(','), 
+                        limit: (limit || keys.length || '*') 
+                    },
+                    json: true
+                });
+            }),
+        
+        DEFAULT_RESPONSE_HANDLER: ({key}={}) => ({ 
+            getData: (response) => response.data, 
+            getKey: (item) => ({key: key ?? 'id', value:this.getProperty(item, key ?? 'id')})
+        }),
+        
+        DEFAULT_TOPIC_ID_HANDLER: ({key}={}) => 
+            ((object) => object[key ?? 'id']),
     };
   
-    // static assign(...objects){
-    //   return objects.reduce((p, c) => Object.assign(p, c), {})
-    // }
-
-    // static require(array, count){
-    //   if (!array || array.length != count){ throw new Error('invalid filter, requiring two arguments: ' + array) }
-    //   return array;
-    // }
-
     static unique(array){
         let items = array.filter(Boolean); //remove empty entries
         let distinct = new Set(items);
         return Array.from(distinct) 
     }
+
+    static getProperty(object, propertyName ) {
+        var parts = propertyName.split( "." ),
+            length = parts.length,
+            i,
+            property = object || this;
+        
+        for ( i = 0; i < length; i++ ) {
+            property = property[parts[i]];
+        }
+        
+        return property;
+    }
   
-    constructor({cache, topic, key, fn, handler, chunk}={}){
+    constructor({cache, segregator, topic, key, fn, handler, chunk}={}){
         this.cache = cache;
+        this.segregator = segregator;
         this.topic = topic;
         this.key = key;
         this.fn = fn;
         this.handler = handler;
         this.chunk = chunk || 100;
 
+        let me = this;
+        //in case of connection lost, clear the cache
+        this.topic.event.on('reconnecting', ()=>{
+            let keys = me.cache.keys().filter(key => key.startsWith(me.key));
+            keys.forEach(key => me.cache.del(key));
+            console.log(`${me.key} - ${new Date().toISOString()} - connection problem to topic - cache cleared - keys: `, keys.length);
+        })
+
         //subscribe to topic 
-        this.topic.subscribe((data) =>{
+        this.topic.subscribe((data) => {
             try{
                 //can receive null for keep-alive
                 if (data != null && data != "null"){
@@ -61,8 +96,25 @@ class Cache {
                             let id = this.handler.topic(object);
                             let entry = `${key}:${id}`;
 
-                            console.log(`${key} - ${new Date().toISOString()} - cache deleted ${entry}`);
-                            this.cache.del(entry);
+                            //retrieve the object to check if it is a map
+                            let oentry = this.cache.get(entry);
+                            let entries = [];
+
+
+                            //append to array if the object was found in the cache
+                            if (oentry){
+                               entries.push(entry);
+                            }
+
+                            //in this case, we have a map, add also the reference
+                            if (oentry && typeof oentry != 'object'){
+                                entries.push(`${key}:${oentry}`)
+                            }
+
+                            if (entries.length){
+                                console.log(`${key} - ${new Date().toISOString()} - cache deleted entry(is): [${entries}]`);
+                                this.cache.del(entries);
+                            }
                         }
                     }
                 }
@@ -72,7 +124,7 @@ class Cache {
         });
     }   
 
-    async get({company, keys}={}){
+    async get({segregator, keys}={}){
         
         keys = Cache.unique(keys);
 
@@ -92,6 +144,7 @@ class Cache {
 
         }   
 
+        
         if (missing.length){
             try{
                 //request missing items
@@ -101,9 +154,10 @@ class Cache {
                 //chunk reads
                 do{
                     let keys = missing.slice(i, i + this.chunk);
-                    let response = await this.fn({company: company, keys: keys});
+                    let response = await this.fn.apply(this, [{segregator: segregator, keys: keys}]);
                     //process the response
                     let odata = this.handler.response.getData(response);
+                    
                     //append to array
                     data.push(...odata);
                     //sum the read items
@@ -116,11 +170,18 @@ class Cache {
                 //iterate over item and cache it
                 for (let i=0; i < data.length; i++){
                     let object = data[i];
-                    let key = this.handler.response.getKey(object);
+                    let pair = this.handler.response.getKey(object);
 
                     //add to cache and cached
-                    this.cache.set(`${this.key}:${key}`, object);
-                    cached.push(object);
+                    this.cache.set(`${this.key}:${pair.value}`, object);
+
+                    //create the map to clean when an topic notify changes
+                    if (pair.key != 'id') this.cache.set(`${this.key}:${object.id}`, pair.value);
+
+                    //add to cache 
+                    if (missing.indexOf(pair.value) != -1) {
+                        cached.push(object);
+                    }
                 }
             } 
             catch(ex){

@@ -2,12 +2,14 @@
 
 const Stomp  = require('stomp-client'); //https://github.com/ahudak/node-stomp-client
 const guid = require('guid');
+const EventEmitter = require('node:events');
 
 class Queue {
 
     constructor(conf){
         this.conf = conf;
         this.saction = Function();//empty subscription action
+        this.event = new EventEmitter();
 
         this.create();
         this.connect();
@@ -27,24 +29,34 @@ class Queue {
         var me = this;
 
         this.mq.on('end', ()=>{
+            let date = new Date().toISOString();
             me.connected = false;
-            console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - disconnected'});
+            me.event.emit('end', {timestamp: date, destination: me.conf.destination});
+            console.info('%j',{timestamp: date, level: 'INFO', message: 'from ' + me.conf.destination + ' - disconnected'});
         });
         this.mq.on('reconnecting', ()=>{
+            let date = new Date().toISOString();
             me.connected = false;
-            console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - reconnecting'});
+            me.event.emit('reconnecting', {timestamp: date, destination: me.conf.destination});
+            console.info('%j',{timestamp: date, level: 'INFO', message: 'from ' + me.conf.destination + ' - reconnecting'});
         });
         this.mq.on('connect', ()=>{
+            let date = new Date().toISOString();
             me.connected = true;
-            console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - connect'});
+            me.event.emit('connect', {timestamp: date, destination: me.conf.destination});
+            console.info('%j',{timestamp: date, level: 'INFO', message: 'from ' + me.conf.destination + ' - connect'});
         });
         this.mq.on('reconnect', ()=>{
+            let date = new Date().toISOString();
             me.connected = true;
             me.solver(); //informs that connected (or reconnected)
-            console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - reconnect'});
+            me.event.emit('reconnect', {timestamp: date, destination: me.conf.destination});
+            console.info('%j',{timestamp: date, level: 'INFO', message: 'from ' + me.conf.destination + ' - reconnect'});
         });
         this.mq.on('error', (err)=>{
-            console.error('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'from ' + me.conf.destination + ' - ' + err.message + ' - ' + err.stack});
+            let date = new Date().toISOString();
+            me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: err});
+            console.error('%j',{timestamp: date, level: 'INFO', message: 'from ' + me.conf.destination + ' - ' + err.message + ' - ' + err.stack});
             
             if (err.message.includes("[reconnect attempts reached]")){
                 me.connected = false;
@@ -52,7 +64,7 @@ class Queue {
                 this.mq.removeAllListeners();
                 this.mq.on('error', (err)=>{}); //supress
 
-                console.info('%j',{timestamp: new Date().toISOString(), level: 'INFO', message: 'reconnecting...'});
+                console.info('%j',{timestamp: date, level: 'INFO', message: 'reconnecting...'});
                 this.mq.disconnect();
                 me.rdp = null;
                 
@@ -74,10 +86,16 @@ class Queue {
                         me.session = session;
                         resolve();
                     }, (err) => {
-                        console.error('%j',{timestamp: new Date().toISOString(), level: 'ERROR', message: 'from ' + me.conf.destination + ' - ' + err.message + ' - ' + err.stack});
+                        let date = new Date().toISOString();
+
+                        me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: err});
+                        console.error('%j',{timestamp: date, level: 'ERROR', message: 'from ' + me.conf.destination + ' - ' + err.message + ' - ' + err.stack});
                     });
                     
-                }catch(e){
+                }catch(e){                        
+                    let date = new Date().toISOString();
+                    me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: e});
+
                     me.rdp = null;
                     reject(e);
                 }
@@ -109,8 +127,12 @@ class Queue {
             promise = this.mq.publish(this.conf.destination, content, {'persistent': true, 'content-type': 'application/json', 'correlation-id': id});               
             return promise.then(e => id); //return the id
         } else {
+            let date = new Date().toISOString();
+            let error = new Error('unable to write to queue')
+            me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: error});
+
             //if it is unable to send, reject with an error
-            return Promise.reject(new Error('unable to write to queue'));
+            return Promise.reject(error);
         }
 
     }
@@ -127,6 +149,9 @@ class Queue {
                     me.subscription = id;
                     resolve();
                 }catch(e){
+
+                    let date = new Date().toISOString();
+                    me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: e});
                     reject(e);
                 }
             });
@@ -145,10 +170,17 @@ class Queue {
                     me.mq.ack(mid, me.subscription);
                     resolve();
                 }catch(e){
+                    let date = new Date().toISOString();
+                    me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: e});
                     reject(e);
                 }
             } else {
-                reject(new Error('no subscription active, call "subscribe" before'))
+
+                let date = new Date().toISOString();
+                let error = new Error('no subscription active, call "subscribe" before')
+                me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: error});
+
+                reject(error)
             }
         });
         return p;
@@ -163,14 +195,21 @@ class Queue {
                     me.subscription = null;
                     resolve();
                 }catch(e){
+                    let date = new Date().toISOString();
+                    me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: e});
                     reject(e);
                 }
             } else {
-                reject(new Error('no subscription active, nothing to unsubscribe'))
+                let date = new Date().toISOString();
+                let error = new Error('no subscription active, nothing to unsubscribe')
+                me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: error});
+                reject(error)
             }
         });
         return p;
     }
+
+
 
     
 
