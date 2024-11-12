@@ -72,6 +72,7 @@ class Cache {
         this.chunk = chunk || 100;
 
         let me = this;
+        
         //in case of connection lost, clear the cache
         this.topic.event.on('reconnecting', ()=>{
             let keys = me.cache.keys().filter(key => key.startsWith(me.key));

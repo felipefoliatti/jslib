@@ -55,7 +55,7 @@ class Queue {
         });
         this.mq.on('error', (err)=>{
             let date = new Date().toISOString();
-            me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: err});
+            me.event.emit('exception', {timestamp: date, destination: me.conf.destination, error: err});
             console.error('%j',{timestamp: date, level: 'INFO', message: 'from ' + me.conf.destination + ' - ' + err.message + ' - ' + err.stack});
             
             if (err.message.includes("[reconnect attempts reached]")){
@@ -88,13 +88,13 @@ class Queue {
                     }, (err) => {
                         let date = new Date().toISOString();
 
-                        me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: err});
+                        me.event.emit('exception', {timestamp: date, destination: me.conf.destination, error: err});
                         console.error('%j',{timestamp: date, level: 'ERROR', message: 'from ' + me.conf.destination + ' - ' + err.message + ' - ' + err.stack});
                     });
                     
                 }catch(e){                        
                     let date = new Date().toISOString();
-                    me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: e});
+                    me.event.emit('exception', {timestamp: date, destination: me.conf.destination, error: e});
 
                     me.rdp = null;
                     reject(e);
@@ -129,7 +129,7 @@ class Queue {
         } else {
             let date = new Date().toISOString();
             let error = new Error('unable to write to queue')
-            me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: error});
+            me.event.emit('exception', {timestamp: date, destination: me.conf.destination, error: error});
 
             //if it is unable to send, reject with an error
             return Promise.reject(error);
@@ -151,7 +151,7 @@ class Queue {
                 }catch(e){
 
                     let date = new Date().toISOString();
-                    me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: e});
+                    me.event.emit('exception', {timestamp: date, destination: me.conf.destination, error: e});
                     reject(e);
                 }
             });
@@ -171,14 +171,14 @@ class Queue {
                     resolve();
                 }catch(e){
                     let date = new Date().toISOString();
-                    me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: e});
+                    me.event.emit('exception', {timestamp: date, destination: me.conf.destination, error: e});
                     reject(e);
                 }
             } else {
 
                 let date = new Date().toISOString();
                 let error = new Error('no subscription active, call "subscribe" before')
-                me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: error});
+                me.event.emit('exception', {timestamp: date, destination: me.conf.destination, error: error});
 
                 reject(error)
             }
@@ -196,13 +196,13 @@ class Queue {
                     resolve();
                 }catch(e){
                     let date = new Date().toISOString();
-                    me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: e});
+                    me.event.emit('exception', {timestamp: date, destination: me.conf.destination, error: e});
                     reject(e);
                 }
             } else {
                 let date = new Date().toISOString();
                 let error = new Error('no subscription active, nothing to unsubscribe')
-                me.event.emit('error', {timestamp: date, destination: me.conf.destination, error: error});
+                me.event.emit('exception', {timestamp: date, destination: me.conf.destination, error: error});
                 reject(error)
             }
         });
