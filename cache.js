@@ -8,10 +8,8 @@ const request = require('request-promise-native');
 
 class Cache {
     cache = null;
-    
-    key = null;
-    segregator = null;
-    
+    key = null;  
+
     fn = null;
     topic = null;
 
@@ -20,13 +18,15 @@ class Cache {
 
     static fn = {
         DEFAULT_REQUEST: ({uri, key, version, limit}) =>
-            (async function ({segregator, keys}={}) { 
+            (async function ({req, keys}={}) { 
                 return await request({
                     method: 'GET', 
                     uri: uri, 
+                    headers: {
+                        'authorization': req.get('authorization') 
+                    },
                     qs: { 
                         version: (version || '1'), 
-                        [this.segregator]: Array.isArray(segregator)? segregator.join(',') : segregator, 
                         [key ?? 'id']: keys.join(','), 
                         limit: (limit || keys.length || '*') 
                     },
@@ -62,9 +62,8 @@ class Cache {
         return property;
     }
   
-    constructor({cache, segregator, topic, key, fn, handler, chunk}={}){
+    constructor({cache, topic, key, fn, handler, chunk}={}){
         this.cache = cache;
-        this.segregator = segregator;
         this.topic = topic;
         this.key = key;
         this.fn = fn;
@@ -94,27 +93,32 @@ class Cache {
 
                         if (object.type == 1 || object.type == 2){
                             
-                            let id = this.handler.topic(object);
-                            let entry = `${key}:${id}`;
+                            //try to get the key (usually the property id)
+                            let key = this.handler.topic(object);
 
-                            //retrieve the object to check if it is a map
-                            let oentry = this.cache.get(entry);
-                            let entries = [];
+                            //if find it, try to find the cache-key to delete it
+                            if (key){
+                                let entry = `${this.key}:${key}`;
+
+                                //retrieve the object to check if it is a map
+                                let oentry = this.cache.get(entry);
+                                let entries = [];
 
 
-                            //append to array if the object was found in the cache
-                            if (oentry){
-                               entries.push(entry);
-                            }
+                                //append to array if the object was found in the cache
+                                if (oentry){
+                                entries.push(entry);
+                                }
 
-                            //in this case, we have a map, add also the reference
-                            if (oentry && typeof oentry != 'object'){
-                                entries.push(`${key}:${oentry}`)
-                            }
+                                //in this case, we have a map, add also the reference
+                                if (oentry && typeof oentry != 'object'){
+                                    entries.push(`${this.key}:${oentry}`)
+                                }
 
-                            if (entries.length){
-                                console.log(`${key} - ${new Date().toISOString()} - cache deleted entry(is): [${entries}]`);
-                                this.cache.del(entries);
+                                if (entries.length){
+                                    console.log(`${this.key} - ${new Date().toISOString()} - cache deleted entry(is): [${entries}]`);
+                                    this.cache.del(entries);
+                                }
                             }
                         }
                     }
@@ -125,7 +129,7 @@ class Cache {
         });
     }   
 
-    async get({segregator, keys}={}){
+    async get({req, keys}={}){
         
         keys = Cache.unique(keys);
 
@@ -155,7 +159,7 @@ class Cache {
                 //chunk reads
                 do{
                     let keys = missing.slice(i, i + this.chunk);
-                    let response = await this.fn.apply(this, [{segregator: segregator, keys: keys}]);
+                    let response = await this.fn.apply(this, [{req: req, keys: keys}]);
                     //process the response
                     let odata = this.handler.response.getData(response);
                     
@@ -177,7 +181,7 @@ class Cache {
                     this.cache.set(`${this.key}:${pair.value}`, object);
 
                     //create the map to clean when an topic notify changes
-                    if (pair.key != 'id') this.cache.set(`${this.key}:${object.id}`, pair.value);
+                    if (pair.key != 'id' && object.id) this.cache.set(`${this.key}:${object.id}`, pair.value);
 
                     //add to cache 
                     if (missing.indexOf(pair.value) != -1) {
@@ -191,9 +195,21 @@ class Cache {
             }
 
         }
+        
+        //return data
+        return {
+            asArray: () => {
+                return cached;
+            },
+            asHash: (by) => {
 
-        //return all cached data
-        return cached;
+                if (!by) by = (by => by.id);
+
+                let hash = {};
+                cached.forEach(e => hash[by(e)] = e);
+                return hash;
+            }
+        };
     }
 }  
 
