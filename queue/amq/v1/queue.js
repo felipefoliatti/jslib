@@ -117,7 +117,7 @@ class Queue {
     }
 
     send(content) {
-
+        var me = this;
         var id = guid.raw();
         var promise;
             
