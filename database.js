@@ -28,6 +28,7 @@ class Database {
                         user              : me.user,
                         password          : me.password,
                         database          : me.database,
+                        port              : me.port,
                         multipleStatements: me.multiple||false
                     });
                 }
@@ -115,6 +116,7 @@ class Database {
                         user              : me.user,
                         password          : me.password,
                         database          : me.database,
+                        port              : me.port,
                         multipleStatements: me.multiple||false
                     });
                 }
