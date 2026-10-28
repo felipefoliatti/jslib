@@ -1,10 +1,13 @@
 {
   "name": "jslib",
-  "version": "1.0.29",
+  "version": "1.0.30",
   "description": "",
   "main": "logger.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test filter3.test.js"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "repository": {
     "type": "git",
