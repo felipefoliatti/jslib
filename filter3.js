@@ -27,9 +27,9 @@
  * const total = await db.query(op.count('SELECT count(1) FROM clients.address adr WHERE adr.deleted = 0'), op.values);
  * // or, for the "pg" driver: db.query(op.toQuery(sql))  ->  { text, values }
  *
- * Operators: eq, neq, gt, gte, lt, lte, in, nin, like (contains), starts, ends,
- *            ilike (case-insensitive contains; becomes LIKE on the mysql dialect),
- *            btw (a,b), null (true|false).
+ * Operators: eq, neq, gt, gte, lt, lte, in, nin, like (contains), nlike (does not contain),
+ *            starts, ends, ilike / nilike (case-insensitive like / nlike; LIKE / NOT LIKE on
+ *            the mysql dialect), btw (a,b), null (true|false).
  * Types (4th argument of where.add): string (default), int, number, bool, date, json (see below).
  *
  * Errors: every validation problem throws a FilterError carrying `status` and `code`
@@ -57,15 +57,12 @@
  * (`{ in: ['1,2', '3'] }` is two ANDed conditions, `{ in: [1, 2, 3] }` is three).
  *
  * Default operator: a value sent WITHOUT an operator (`?product=1,2,3`, as opposed to
- * `?product[eq]=1`) uses the "default operator", which is `in` (comma separated list), so
- * `?product=1,2,3` means `adr.id IN (1, 2, 3)`. Explicit operators are never affected.
- * The default operator must be one of the operators declared for the filter, so a filter
- * declared only with ['eq'] needs its own `operator: 'eq'` (see 3 below).
- * Same layering as the errors, the most specific one wins:
+ * `?product[eq]=1`) uses the FIRST operator declared for the filter, unless the filter names
+ * another one of its operators in `operator`. Explicit operators are never affected.
  *
- *   operators.configure({ defaultOperator: 'eq' });                          // 1) process-wide
- *   operators.for(req.query, { defaultOperator: 'eq' })                      // 2) per operator
- *   .where.add('hasClient', fn, ['eq'], { operator: 'eq' })                  // 3) per filter
+ *   .where.add('product', 'adr.id', ['in', 'eq'])                     // ?product=1,2  ->  IN (1, 2)
+ *   .where.add('name', 'adr.name', ['eq', 'neq', 'like'])             // ?name=Ana     ->  = 'Ana'
+ *   .where.add('name', 'adr.name', ['eq', 'neq', 'like'], { operator: 'like' })  // -> LIKE '%Ana%'
  *
  * JSON columns: `type: 'json'` filters inside a json/jsonb column. Only the declared `paths` can be
  * filtered (a whitelist), each with its own type and operators; the path is never taken from the request.
@@ -74,7 +71,7 @@
  *     type: 'json',
  *     paths: {
  *       'load':           'int',                                   // short form: type only
- *       'address.street': { type: 'string', ops: ['eq', 'ilike'] },  // full form: type + operators
+ *       'address.street': { type: 'string', ops: ['ilike', 'eq'] },  // full form: type + operators
  *       'address.number': { type: 'int', required: true },
  *     },
  *   })
@@ -89,8 +86,10 @@
  *
  * A path's operators are the ones it declares in `ops`, or else every operator that suits its type:
  *   all types         eq, neq, in, nin, null, exists
- *   string            + like, ilike, starts, ends
+ *   string            + like, nlike, ilike, nilike, starts, ends
  *   int/number/date   + gt, gte, lt, lte, btw
+ * A path's default operator is its own `operator`, else the filter's `operator`, else its first one
+ * (`eq` when `ops` is not declared). `ilike` above is the default of 'address.street'.
  * Casts: int -> bigint/SIGNED, number -> numeric/DECIMAL, date -> timestamptz/DATETIME,
  * bool -> boolean (mysql compares 'true'/'false'). A stored value that does not fit the cast makes
  * the database reject the query, so declare the type the data really has.
@@ -109,9 +108,14 @@ const DEFAULT_MESSAGE = 'filter {name} not supplied';
 
 // Process-wide overrides set through configure(); empty means "use the built-in defaults".
 let globalError = {};
-let globalDefaultOperator; // undefined means 'in'
 
-/** Throws unless `op` is one of the built-in operators (used for every defaultOperator setting). */
+// The default operator used to be configurable process-wide / per operator; it is now the
+// filter's first operator (or its `operator` option). Old settings fail loudly instead of being ignored.
+const DEFAULT_OPERATOR_REMOVED =
+  "defaultOperator was removed: a value sent without an operator uses the filter's first operator " +
+  "(or its `operator` option)";
+
+/** Throws unless `op` is one of the built-in operators. */
 function assertBuiltinOperator(op, where) {
   if (typeof op !== 'string' || !Object.prototype.hasOwnProperty.call(OPERATORS, op)) {
     throw new Error(`${where}: unknown operator '${op}'`);
@@ -194,7 +198,9 @@ const OPERATORS = {
   in:       { kind: 'list',   sql: 'IN' },
   nin:      { kind: 'list',   sql: 'NOT IN' },
   like:     { kind: 'pattern', sql: 'LIKE',  wrap: (v) => `%${escapeLike(v)}%` },
+  nlike:    { kind: 'pattern', sql: 'NOT LIKE',  wrap: (v) => `%${escapeLike(v)}%` },
   ilike:    { kind: 'pattern', sql: 'ILIKE', wrap: (v) => `%${escapeLike(v)}%` },
+  nilike:   { kind: 'pattern', sql: 'NOT ILIKE', wrap: (v) => `%${escapeLike(v)}%` },
   starts:   { kind: 'pattern', sql: 'LIKE',  wrap: (v) => `${escapeLike(v)}%` },
   ends:     { kind: 'pattern', sql: 'LIKE',  wrap: (v) => `%${escapeLike(v)}` },
   btw:      { kind: 'pair' },
@@ -248,7 +254,7 @@ const isOperatorName = (key) =>
 const JSON_COMMON_OPS = ['eq', 'neq', 'in', 'nin', 'null', 'exists'];
 const JSON_ORDERED_OPS = [...JSON_COMMON_OPS, 'gt', 'gte', 'lt', 'lte', 'btw'];
 const JSON_TYPE_OPS = {
-  string: [...JSON_COMMON_OPS, 'like', 'ilike', 'starts', 'ends'],
+  string: [...JSON_COMMON_OPS, 'like', 'nlike', 'ilike', 'nilike', 'starts', 'ends'],
   int: JSON_ORDERED_OPS,
   number: JSON_ORDERED_OPS,
   date: JSON_ORDERED_OPS,
@@ -263,8 +269,11 @@ const JSON_CASTS = {
   mysql: { int: 'SIGNED', number: 'DECIMAL(65,30)', date: 'DATETIME' }, // bool: compared as 'true'/'false'
 };
 
-/** Validates `paths` of a json filter and returns a Map path -> { name, segments, type, ops, required }. */
-function normalizeJsonPaths(name, paths) {
+/**
+ * Validates `paths` of a json filter and returns a Map path -> { name, segments, type, ops, operator, required }.
+ * `filterOperator` is the filter's own `operator` option: the default of every path that does not set one.
+ */
+function normalizeJsonPaths(name, paths, filterOperator) {
   const where = `where.add('${name}')`;
   if (!isPlainObject(paths) || !Object.keys(paths).length) {
     throw new Error(`${where}: type 'json' needs a non-empty paths object`);
@@ -279,7 +288,7 @@ function normalizeJsonPaths(name, paths) {
     if (clash) throw new Error(`${where}: path '${path}' cannot use the operator name '${clash}'`);
 
     const spec = typeof paths[path] === 'string' ? { type: paths[path] } : paths[path];
-    if (!isPlainObject(spec)) throw new Error(`${where}: path '${path}' must be a type or { type, ops, required }`);
+    if (!isPlainObject(spec)) throw new Error(`${where}: path '${path}' must be a type or { type, ops, operator, required }`);
 
     const type = spec.type || 'string';
     if (!Object.prototype.hasOwnProperty.call(JSON_TYPE_OPS, type)) throw new Error(`${where}: unknown type '${type}' for path '${path}'`);
@@ -297,7 +306,14 @@ function normalizeJsonPaths(name, paths) {
       }
     }
 
-    out.set(path, { name: `${name}.${path}`, segments, type, ops, required: spec.required === true });
+    // Default operator: the path's own, else the filter's, else the path's first one.
+    const operator = [spec.operator, filterOperator, ops[0]].find((op) => op !== undefined);
+    if (!ops.includes(operator)) {
+      const owner = spec.operator !== undefined ? `operator '${operator}' of path '${path}'` : `operator '${operator}'`;
+      throw new Error(`${where}: ${owner} must be one of the operators of path '${path}' [${ops.join(', ')}]`);
+    }
+
+    out.set(path, { name: `${name}.${path}`, segments, type, ops, operator, required: spec.required === true });
   }
 
   // "address" and "address.street" cannot both be leaves: a value is either an object or a scalar.
@@ -320,7 +336,7 @@ const NESTED = /^([^\[\]]+)((?:\[[^\[\]]+\]){2,})$/;
 
 // Bucket key for a value sent without any operator ("?product=1,2"). It is an empty string on
 // purpose: BRACKET needs at least one character between the brackets, so no request can produce
-// it by writing "product[...]". It is resolved to a real operator later (see _bareOperator),
+// it by writing "product[...]". It is resolved to a real operator later (see _conditions),
 // because only then do we know which filter it belongs to.
 const BARE = '';
 
@@ -504,7 +520,6 @@ class Operator {
    * @param {string}  [options.sortKey='sort']     name of the sorting parameter
    * @param {boolean} [options.strict=false]       true => unknown filters / sort fields are errors
    * @param {number}  [options.maxListSize=500]    max items in in / nin / btw
-   * @param {string}  [options.defaultOperator]    operator for values sent without one (default 'in')
    * @param {object}  [options.error]              { status, code, message } defaults for this operator
    */
   constructor(input, options = {}) {
@@ -513,7 +528,7 @@ class Operator {
       throw new Error(`Unknown dialect '${this.options.dialect}'`);
     }
 
-    if (options.defaultOperator !== undefined) assertBuiltinOperator(options.defaultOperator, 'operators.for');
+    if (options.defaultOperator !== undefined) throw new Error(`operators.for: ${DEFAULT_OPERATOR_REMOVED}`);
 
     // Per-operator error defaults; sit between the process-wide ones and each filter's own config.
     this.options.error = normalizeErrorConfig(options.error, 'operators.for');
@@ -535,8 +550,8 @@ class Operator {
    * where.add(name, operators, { type, required, operator }, { status, code, message })   // column = name
    * where.add(name, column, { type: 'json', paths, required, operator }, { status, code, message })
    *
-   * `operator` is the operator used when the request sends a value without one (?name=…).
-   * It must be one of this filter's `operators`.
+   * A value sent without an operator (?name=…) uses the first of `operators`, or `operator`
+   * when given (it must be one of this filter's `operators`).
    *
    * `column` may be a function (name, operator, value) => string | { sql, values } | falsy.
    *
@@ -593,8 +608,9 @@ class Operator {
       column,
       ops,
       type,
-      paths: json ? normalizeJsonPaths(name, opts.paths) : undefined,
-      operator: opts.operator,
+      paths: json ? normalizeJsonPaths(name, opts.paths, opts.operator) : undefined,
+      // Operator for a value sent without one (json filters resolve it per path).
+      operator: json ? undefined : (opts.operator !== undefined ? opts.operator : ops[0]),
       required: opts.required === true,
       error: normalizeErrorConfig(error, `where.add('${name}')`),
     });
@@ -683,7 +699,8 @@ class Operator {
         return [`${col} ${spec.sql} ${ctx.param(cast(value))}`];
 
       case 'pattern': {
-        const sqlOp = spec.sql === 'ILIKE' && this.options.dialect === 'mysql' ? 'LIKE' : spec.sql;
+        // mysql has no ILIKE: its default collations already compare case-insensitively.
+        const sqlOp = this.options.dialect === 'mysql' ? spec.sql.replace('ILIKE', 'LIKE') : spec.sql;
         return [`${col} ${sqlOp} ${ctx.param(spec.wrap(String(value)))}`];
       }
 
@@ -731,25 +748,16 @@ class Operator {
   }
 
   /**
-   * The operator used for a value sent without one. Most specific wins:
-   * filter `operator` > operators.for({ defaultOperator }) > configure({ defaultOperator }) > 'in'.
-   */
-  _bareOperator(def) {
-    return [def.operator, this.options.defaultOperator, globalDefaultOperator, 'in']
-      .find((op) => op !== undefined);
-  }
-
-  /**
    * Turns the { operator: value } sent for one parameter into SQL fragments.
-   * `name` is used in error messages, `ops` are the allowed operators and `build(op, value)`
-   * renders one occurrence.
+   * `name` is used in error messages, `ops` are the allowed operators, `bareOp` takes a value
+   * sent without an operator and `build(op, value)` renders one occurrence.
    */
-  _conditions(def, name, sent, ops, build) {
+  _conditions(name, sent, ops, bareOp, build) {
     // Work on a copy: the bare value is moved under its real operator, and the input must stay intact
     // (the `values` getter compiles again).
     const given = Object.assign(Object.create(null), sent);
     if (BARE in given) {
-      const op = this._bareOperator(def);
+      const op = bareOp;
       const value = given[BARE];
       delete given[BARE];
       // "?product=1&product[in]=2": both end up under the same operator.
@@ -783,7 +791,7 @@ class Operator {
   _compileFilter(def, ctx) {
     if (def.paths) return this._compileJson(def, ctx);
 
-    const parts = this._conditions(def, def.name, this._input[def.name], def.ops, (op, value) =>
+    const parts = this._conditions(def.name, this._input[def.name], def.ops, def.operator, (op, value) =>
       typeof def.column === 'function' ? this._custom(def, op, value, ctx) : this._builtin(def, op, value, ctx));
 
     // "required" means: at least one condition must come out of this filter.
@@ -851,12 +859,12 @@ class Operator {
       }
     }
     const parts = 'null' in root
-      ? this._conditions(def, def.name, { null: root.null }, ['null'],
+      ? this._conditions(def.name, { null: root.null }, ['null'], 'null',
         (op, value) => this._builtin(def, op, value, ctx))
       : [];
 
     for (const [path, spec] of def.paths) {
-      const own = this._conditions(def, spec.name, given.get(path), spec.ops,
+      const own = this._conditions(spec.name, given.get(path), spec.ops, spec.operator,
         (op, value) => this._jsonCondition(def, spec, op, value, ctx));
 
       if (spec.required && !own.length) {
@@ -1036,22 +1044,16 @@ class Operator {
 
 /**
  * Changes the process-wide error defaults. Call it once, right after require().
- * Pass `{ error: null }` / `{ defaultOperator: null }` to go back to the built-in defaults
- * (422 / 1052 and 'in').
+ * Pass `{ error: null }` to go back to the built-in defaults (422 / 1052).
  *
  *   operators.configure({ error: { status: 400, code: 2000, message: 'filter {name} not supplied' } });
- *   operators.configure({ defaultOperator: 'eq' });  // "?product=1" means = 1 (instead of IN)
  */
 function configure({ error, defaultOperator } = {}) {
-  // Validate everything first, so a bad call changes nothing.
+  if (defaultOperator !== undefined) throw new Error(`configure: ${DEFAULT_OPERATOR_REMOVED}`);
   const normalizedError = error === undefined || error === null ? error : normalizeErrorConfig(error, 'configure');
-  if (defaultOperator !== undefined && defaultOperator !== null) assertBuiltinOperator(defaultOperator, 'configure');
 
   if (error === null) globalError = {};
   else if (error !== undefined) globalError = { ...globalError, ...normalizedError };
-
-  if (defaultOperator === null) globalDefaultOperator = undefined;
-  else if (defaultOperator !== undefined) globalDefaultOperator = defaultOperator;
 
   return module.exports;
 }

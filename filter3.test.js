@@ -955,10 +955,7 @@ describe('configurable error defaults: configure() < for({ error }) < where.add(
 
 // ===========================================================================
 describe('default operator: a value sent without an operator (?product=1,2,3)', () => {
-  // configure() is process-wide state, so every test that uses it restores the default at the end.
-  const resetDefaultOperator = () => operators.configure({ defaultOperator: null });
-
-  test('built-in default is in: "?product=1,2,3" and "?product[in]=1,2,3" are the same', () => {
+  test('the first declared operator is the default: "?product=1,2,3" and "?product[in]=1,2,3" are the same', () => {
     const bare = operators.for('product=1,2,3')
                           .where.add('product', 'adr.id', ['in', 'gt'], { type: 'int' });
     const explicit = operators.for('product[in]=1,2,3')
@@ -969,64 +966,33 @@ describe('default operator: a value sent without an operator (?product=1,2,3)', 
     assert.equal(normalize(explicit.query(BASE)), normalize(bare.query(BASE)));
   });
 
+  test('the order of the operators matters: [eq, neq, like] makes eq the default', () => {
+    const op = operators.for('name=Ana')
+                        .where.add('name', 'adr.name', ['eq', 'neq', 'like']);
+
+    assert.equal(normalize(op.query(BASE)), `${BASE_AND} ((adr.name = $1))`);
+    assert.deepEqual(op.values, ['Ana']);
+  });
+
+  test('the "operator" option picks another of the declared operators', () => {
+    const op = operators.for('name=Ana')
+                        .where.add('name', 'adr.name', ['eq', 'neq', 'like'], { operator: 'neq' });
+
+    assert.equal(normalize(op.query(BASE)), `${BASE_AND} ((adr.name <> $1))`);
+  });
+
+  test('without an operator list the filter only has eq, which is then its default', () => {
+    const op = operators.for('qtd=7')
+                        .where.add('qtd', 'adr.qtd', { type: 'int' });
+
+    assert.equal(normalize(op.query(BASE)), `${BASE_AND} ((adr.qtd = $1))`);
+  });
+
   test('explicit operators are never affected by the default', () => {
     const op = operators.for('product[gt]=5')
                         .where.add('product', 'adr.id', ['in', 'gt'], { type: 'int' });
 
     assert.equal(normalize(op.query(BASE)), `${BASE_AND} ((adr.id > $1))`);
-  });
-
-  test('configure({ defaultOperator: "eq" }) changes the default for the whole process', () => {
-    operators.configure({ defaultOperator: 'eq' });
-    try {
-      const op = operators.for('qtd=7')
-                          .where.add('qtd', 'adr.qtd', ['eq', 'gt'], { type: 'int' });
-
-      assert.equal(normalize(op.query(BASE)), `${BASE_AND} ((adr.qtd = $1))`);
-      assert.deepEqual(op.values, [7]);
-    } finally {
-      resetDefaultOperator();
-    }
-  });
-
-  test('operators.for(..., { defaultOperator }) only affects that operator', () => {
-    const withEq = operators.for('qtd=7', { defaultOperator: 'eq' })
-                            .where.add('qtd', 'adr.qtd', ['in', 'eq'], { type: 'int' });
-    const withoutOption = operators.for('qtd=7,8')
-                                   .where.add('qtd', 'adr.qtd', ['in', 'eq'], { type: 'int' });
-
-    assert.equal(normalize(withEq.query(BASE)), `${BASE_AND} ((adr.qtd = $1))`);
-    assert.equal(normalize(withoutOption.query(BASE)), `${BASE_AND} ((adr.qtd IN ($1, $2)))`); // still in
-  });
-
-  test('the filter "operator" option wins over the built-in, global and operator-level defaults', () => {
-    // Built-in default is "in": the flag filter only allows eq, so it declares its own default.
-    const builtIn = operators.for('product=1,2&flag=true')
-                             .where.add('product', 'adr.id', ['in'], { type: 'int' })
-                             .where.add('flag', 'adr.flag', ['eq'], { type: 'bool', operator: 'eq' });
-
-    assert.equal(
-      normalize(builtIn.query(BASE)),
-      `${BASE_AND} ((adr.id IN ($1, $2)) AND (adr.flag = $3))`
-    );
-    assert.deepEqual(builtIn.values, [1, 2, true]);
-
-    // Operator-level default is "eq", but the filter asks for "in".
-    const operatorLevel = operators.for('product=1,2', { defaultOperator: 'eq' })
-                                   .where.add('product', 'adr.id', ['in', 'eq'], { type: 'int', operator: 'in' });
-
-    assert.equal(normalize(operatorLevel.query(BASE)), `${BASE_AND} ((adr.id IN ($1, $2)))`);
-
-    // Same for the process-wide default.
-    operators.configure({ defaultOperator: 'eq' });
-    try {
-      const global = operators.for('product=1,2')
-                              .where.add('product', 'adr.id', ['in', 'eq'], { type: 'int', operator: 'in' });
-
-      assert.equal(normalize(global.query(BASE)), `${BASE_AND} ((adr.id IN ($1, $2)))`);
-    } finally {
-      resetDefaultOperator();
-    }
   });
 
   test('repeated bare parameters, and a bare value mixed with an explicit one, are ANDed', () => {
@@ -1047,20 +1013,9 @@ describe('default operator: a value sent without an operator (?product=1,2,3)', 
     assert.throws(() => op.query(BASE), FilterError);
   });
 
-  test('the default operator must be allowed for the filter, otherwise the request is rejected', () => {
-    const op = operators.for('qtd=1')
-                        .where.add('qtd', 'adr.qtd', ['eq', 'gt'], { type: 'int' }); // "in" is not declared
-
-    const err = thrown(() => op.query(BASE));
-
-    assert.ok(err instanceof FilterError);
-    assert.match(err.message, /Operator 'in' is not allowed for filter 'qtd'/);
-    assert.equal(err.param, 'qtd');
-  });
-
-  test('custom (function) filters declared with eq only need their own default', () => {
+  test('custom (function) filters: their first operator is the default too', () => {
     const declare = (input) => operators.for(input)
-                                        .where.add('hasClient', () => 'exists (select 1)', ['eq'], { operator: 'eq' });
+                                        .where.add('hasClient', () => 'exists (select 1)', ['eq']);
 
     assert.ok(declare('hasClient=true').query(BASE).includes('(exists (select 1))'));
   });
@@ -1073,13 +1028,6 @@ describe('default operator: a value sent without an operator (?product=1,2,3)', 
     assert.throws(() => declare({}).query(BASE), /filter product not supplied/);
   });
 
-  test('sorting is not affected by the default operator', () => {
-    const op = operators.for('sort=-date', { defaultOperator: 'eq' })
-                        .order.add('date', 'adr.created_at', ['asc', 'desc']);
-
-    assert.ok(op.query(BASE).endsWith('ORDER BY adr.created_at DESC'));
-  });
-
   test('the mysql dialect renders the same IN list with ? placeholders', () => {
     const op = operators.for('product=1,2,3', { dialect: 'mysql' })
                         .where.add('product', 'adr.id', ['in'], { type: 'int' });
@@ -1087,9 +1035,7 @@ describe('default operator: a value sent without an operator (?product=1,2,3)', 
     assert.equal(normalize(op.query(BASE)), `${BASE_AND} ((adr.id IN (?, ?, ?)))`);
   });
 
-  test('invalid settings are declaration errors', () => {
-    assert.throws(() => operators.configure({ defaultOperator: 'nope' }), /unknown operator 'nope'/);
-    assert.throws(() => operators.for({}, { defaultOperator: 'nope' }), /unknown operator 'nope'/);
+  test('the "operator" option must be one of the declared operators', () => {
     assert.throws(
       () => operators.for({}).where.add('a', 'a.a', ['eq'], { operator: 'in' }),
       /must be one of its operators/
@@ -1100,21 +1046,49 @@ describe('default operator: a value sent without an operator (?product=1,2,3)', 
     );
   });
 
-  test('a rejected configure() call changes nothing; { defaultOperator: null } restores "in"', () => {
-    // The error part is invalid, so the whole call must be rejected, including the valid defaultOperator.
-    assert.throws(() => operators.configure({ defaultOperator: 'eq', error: { status: 5 } }), /status/);
-
-    const unchanged = operators.for('product=1,2')
-                               .where.add('product', 'adr.id', ['in', 'eq'], { type: 'int' });
-    assert.equal(normalize(unchanged.query(BASE)), `${BASE_AND} ((adr.id IN ($1, $2)))`);
-
-    operators.configure({ defaultOperator: 'eq' });
-    resetDefaultOperator();
-    const restored = operators.for('product=1,2')
-                              .where.add('product', 'adr.id', ['in', 'eq'], { type: 'int' });
-    assert.equal(normalize(restored.query(BASE)), `${BASE_AND} ((adr.id IN ($1, $2)))`);
+  test('defaultOperator was removed from configure() and for(): using it is an error', () => {
+    assert.throws(() => operators.configure({ defaultOperator: 'eq' }), /defaultOperator was removed/);
+    assert.throws(() => operators.configure({ defaultOperator: null }), /defaultOperator was removed/);
+    assert.throws(() => operators.for({}, { defaultOperator: 'eq' }), /defaultOperator was removed/);
   });
 });
+
+// ===========================================================================
+describe('negated patterns: nlike and nilike', () => {
+  test('nlike renders NOT LIKE and escapes wildcards like like does', () => {
+    const op = operators.for('name[nlike]=50%_off')
+                        .where.add('name', 'adr.name', ['like', 'nlike']);
+
+    assert.equal(normalize(op.query(BASE)), `${BASE_AND} ((adr.name NOT LIKE $1))`);
+    assert.deepEqual(op.values, ['%50\\%\\_off%']);
+  });
+
+  test('nilike is NOT ILIKE on postgres and NOT LIKE on mysql', () => {
+    const pg = operators.for('name[nilike]=ana')
+                        .where.add('name', 'adr.name', ['ilike', 'nilike']);
+    assert.equal(normalize(pg.query(BASE)), `${BASE_AND} ((adr.name NOT ILIKE $1))`);
+    assert.deepEqual(pg.values, ['%ana%']);
+
+    const mysql = operators.for('name[nilike]=ana', { dialect: 'mysql' })
+                           .where.add('name', 'adr.name', ['ilike', 'nilike']);
+    assert.equal(normalize(mysql.query(BASE)), `${BASE_AND} ((adr.name NOT LIKE ?))`);
+  });
+
+  test('repeated, they exclude every value: an AND of NOT LIKEs', () => {
+    const op = operators.for('name[nlike]=ana&name[nlike]=bia')
+                        .where.add('name', 'adr.name', ['nlike']);
+
+    assert.equal(normalize(op.query(BASE)), `${BASE_AND} ((adr.name NOT LIKE $1) AND (adr.name NOT LIKE $2))`);
+  });
+
+  test('they are available on json string paths', () => {
+    const op = operators.for('extra.street[nilike]=main')
+                        .where.add('extra', 'adr.extra', { type: 'json', paths: { street: 'string' } });
+
+    assert.equal(normalize(op.query(BASE)), `${BASE_AND} ((adr.extra->>'street' NOT ILIKE $1))`);
+  });
+});
+
 // ===========================================================================
 describe('json columns (type: json)', () => {
   // The column used in every example: adr.extra holds
@@ -1220,7 +1194,7 @@ describe('json columns (type: json)', () => {
         normalize(op.query(BASE)),
         `${BASE_AND} ((JSON_UNQUOTE(JSON_EXTRACT(adr.extra, '$.address.street')) LIKE ?)` +
         " AND (CAST(JSON_UNQUOTE(JSON_EXTRACT(adr.extra, '$.load')) AS SIGNED) > ?)" +
-        " AND (CAST(JSON_UNQUOTE(JSON_EXTRACT(adr.extra, '$.address.number')) AS SIGNED) IN (?)))"
+        " AND (CAST(JSON_UNQUOTE(JSON_EXTRACT(adr.extra, '$.address.number')) AS SIGNED) = ?))"
       );
       assert.deepEqual(op.values, ['%main%', 5, 10]);
     });
@@ -1251,7 +1225,7 @@ describe('json columns (type: json)', () => {
       const op = operators.for({}).where.add('extra', 'adr.extra', EXTRA);
       const { paths } = op._filters[0];
 
-      assert.deepEqual(paths.get('address.street').ops, ['eq', 'neq', 'in', 'nin', 'null', 'exists', 'like', 'ilike', 'starts', 'ends']);
+      assert.deepEqual(paths.get('address.street').ops, ['eq', 'neq', 'in', 'nin', 'null', 'exists', 'like', 'nlike', 'ilike', 'nilike', 'starts', 'ends']);
       assert.deepEqual(paths.get('load').ops, ['eq', 'neq', 'in', 'nin', 'null', 'exists', 'gt', 'gte', 'lt', 'lte', 'btw']);
     });
 
@@ -1278,21 +1252,47 @@ describe('json columns (type: json)', () => {
       assert.throws(() => op.query(BASE), /Operator 'ilike' is not allowed for filter 'extra.load'/);
     });
 
-    test('a value without an operator uses the default operator (in)', () => {
-      const op = operators.for('extra.load=1,2&extra[address][number]=3')
-                          .where.add('extra', 'adr.extra', EXTRA);
+    test('a value without an operator uses the first operator of the path (eq when ops is not declared)', () => {
+      const op = operators.for('extra.load=7&extra[address][street]=Main St')
+                          .where.add('extra', 'adr.extra', {
+                            type: 'json',
+                            paths: { load: 'int', 'address.street': { type: 'string', ops: ['ilike', 'eq'] } },
+                          });
 
       assert.equal(
         normalize(op.query(BASE)),
-        `${BASE_AND} (((adr.extra->>'load')::bigint IN ($1, $2)) AND ((adr.extra #>> '{address,number}')::bigint IN ($3)))`
+        `${BASE_AND} (((adr.extra->>'load')::bigint = $1) AND (adr.extra #>> '{address,street}' ILIKE $2))`
+      );
+      assert.deepEqual(op.values, [7, '%Main St%']);
+    });
+
+    test('the filter `operator` option applies to its paths; a path `operator` wins over it', () => {
+      const op = operators.for('extra.load=1,2&extra.address.number=3')
+                          .where.add('extra', 'adr.extra', {
+                            type: 'json',
+                            operator: 'in',
+                            paths: { load: 'int', 'address.number': { type: 'int', operator: 'gte' } },
+                          });
+
+      assert.equal(
+        normalize(op.query(BASE)),
+        `${BASE_AND} (((adr.extra->>'load')::bigint IN ($1, $2)) AND ((adr.extra #>> '{address,number}')::bigint >= $3))`
       );
     });
 
-    test('the filter `operator` option applies to its paths', () => {
-      const op = operators.for('extra.load=7')
-                          .where.add('extra', 'adr.extra', { ...EXTRA, operator: 'eq' });
-
-      assert.equal(normalize(op.query(BASE)), `${BASE_AND} (((adr.extra->>'load')::bigint = $1))`);
+    test('a default operator the path does not allow is a declaration error', () => {
+      assert.throws(
+        () => operators.for({}).where.add('extra', 'adr.extra', {
+          type: 'json', paths: { load: { type: 'int', ops: ['eq'], operator: 'gt' } },
+        }),
+        /operator 'gt' of path 'load' must be one of the operators of path 'load' \[eq\]/
+      );
+      assert.throws(
+        () => operators.for({}).where.add('extra', 'adr.extra', {
+          type: 'json', operator: 'ilike', paths: { load: 'int' },
+        }),
+        /operator 'ilike' must be one of the operators of path 'load'/
+      );
     });
 
     test('repeating a path parameter is an AND, also across input shapes', () => {
