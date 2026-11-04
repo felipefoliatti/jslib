@@ -1479,3 +1479,203 @@ describe('json columns (type: json)', () => {
     });
   });
 });
+
+// ===========================================================================
+describe('subqueries: exists and in', () => {
+  // A volume (v) has many tags (tg); the filter applies to the tag code, inside the subquery.
+  const VOLUMES = 'SELECT v.id FROM volume v WHERE v.deleted = 0';
+  const VOLUMES_AND = 'SELECT v.id FROM volume v WHERE (v.deleted = 0) AND';
+  const TAG_OPS = ['like', 'nlike', 'in', 'nin', 'starts', 'eq', 'neq', 'ilike', 'nilike'];
+  const EXISTS = { exists: { from: 'tag tg', where: 'tg.volume = v.id AND tg.deleted = 0' } };
+  const IN = { in: { column: 'v.id', select: 'tg.volume', from: 'tag tg', where: 'tg.deleted = 0' } };
+
+  const EXISTS_SQL = (not, cond) =>
+    `${not}EXISTS (SELECT 1 FROM tag tg WHERE (tg.volume = v.id AND tg.deleted = 0) AND (${cond}))`;
+  const IN_SQL = (not, cond) =>
+    `v.id ${not}IN (SELECT tg.volume FROM tag tg WHERE (tg.deleted = 0)${not ? ' AND (tg.volume IS NOT NULL)' : ''} AND (${cond}))`;
+
+  describe('exists', () => {
+    test('the operator is applied inside the subquery; the first operator is the default', () => {
+      const op = operators.for('tag=urgent')
+                          .where.add('tag', 'tg.code', TAG_OPS, EXISTS);
+
+      assert.equal(normalize(op.query(VOLUMES)), `${VOLUMES_AND} ((${EXISTS_SQL('', 'tg.code LIKE $1')}))`);
+      assert.deepEqual(op.values, ['%urgent%']);
+    });
+
+    test('negated operators run their positive form inside, with NOT EXISTS outside', () => {
+      const cases = {
+        'tag[nlike]=urgent':  ['tg.code LIKE $1',      ['%urgent%']],
+        'tag[nilike]=urgent': ['tg.code ILIKE $1',     ['%urgent%']],
+        'tag[nin]=a,b':       ['tg.code IN ($1, $2)',  ['a', 'b']],
+        'tag[neq]=a':         ['tg.code = $1',         ['a']],
+      };
+      for (const [input, [cond, values]] of Object.entries(cases)) {
+        const op = operators.for(input)
+                            .where.add('tag', 'tg.code', TAG_OPS, EXISTS);
+
+        assert.equal(normalize(op.query(VOLUMES)), `${VOLUMES_AND} ((${EXISTS_SQL('NOT ', cond)}))`, input);
+        assert.deepEqual(op.values, values, input);
+      }
+    });
+
+    test('starts escapes LIKE wildcards, as on any column', () => {
+      const op = operators.for('tag[starts]=u_r')
+                          .where.add('tag', 'tg.code', TAG_OPS, EXISTS);
+
+      assert.equal(normalize(op.query(VOLUMES)), `${VOLUMES_AND} ((${EXISTS_SQL('', 'tg.code LIKE $1')}))`);
+      assert.deepEqual(op.values, ['u\\_r%']);
+    });
+
+    test('string shortcut: the condition is added to the WHERE of the given subquery', () => {
+      const withWhere = operators.for('tag[nin]=a')
+                                 .where.add('tag', 'tg.code', TAG_OPS, {
+                                   exists: 'SELECT 1 FROM tag tg WHERE tg.volume = v.id OR tg.shared = 1;',
+                                 });
+      // The existing WHERE is wrapped, so its OR cannot swallow the condition; the ";" is dropped.
+      assert.equal(
+        normalize(withWhere.query(VOLUMES)),
+        `${VOLUMES_AND} ((NOT EXISTS (SELECT 1 FROM tag tg WHERE (tg.volume = v.id OR tg.shared = 1) AND (tg.code IN ($1)))))`
+      );
+
+      const withoutWhere = operators.for('tag=a')
+                                    .where.add('tag', 'tg.code', ['eq'], { exists: 'SELECT 1 FROM tag tg' });
+      assert.equal(
+        normalize(withoutWhere.query(VOLUMES)),
+        `${VOLUMES_AND} ((EXISTS (SELECT 1 FROM tag tg WHERE tg.code = $1)))`
+      );
+    });
+  });
+
+  describe('in', () => {
+    test('the operator is applied inside; the outer column is compared with the selected one', () => {
+      const op = operators.for('tag=urgent')
+                          .where.add('tag', 'tg.code', TAG_OPS, IN);
+
+      assert.equal(normalize(op.query(VOLUMES)), `${VOLUMES_AND} ((${IN_SQL('', 'tg.code LIKE $1')}))`);
+      assert.deepEqual(op.values, ['%urgent%']);
+    });
+
+    test('negated operators become NOT IN, guarded against a NULL in the subquery', () => {
+      const nlike = operators.for('tag[nlike]=urgent')
+                             .where.add('tag', 'tg.code', TAG_OPS, IN);
+      assert.equal(normalize(nlike.query(VOLUMES)), `${VOLUMES_AND} ((${IN_SQL('NOT ', 'tg.code LIKE $1')}))`);
+
+      const nin = operators.for('tag[nin]=a,b')
+                           .where.add('tag', 'tg.code', TAG_OPS, IN);
+      assert.equal(normalize(nin.query(VOLUMES)), `${VOLUMES_AND} ((${IN_SQL('NOT ', 'tg.code IN ($1, $2)')}))`);
+      assert.deepEqual(nin.values, ['a', 'b']);
+    });
+
+    test('where is optional', () => {
+      const op = operators.for('tag[nin]=a')
+                          .where.add('tag', 'tg.code', TAG_OPS, { in: { column: 'v.id', select: 'tg.volume', from: 'tag tg' } });
+
+      assert.equal(
+        normalize(op.query(VOLUMES)),
+        `${VOLUMES_AND} ((v.id NOT IN (SELECT tg.volume FROM tag tg WHERE (tg.volume IS NOT NULL) AND (tg.code IN ($1)))))`
+      );
+    });
+
+    test('mysql uses ? placeholders and NOT LIKE for nilike', () => {
+      const op = operators.for('tag[nilike]=urgent', { dialect: 'mysql' })
+                          .where.add('tag', 'tg.code', TAG_OPS, IN);
+
+      assert.equal(normalize(op.query(VOLUMES)), `${VOLUMES_AND} ((${IN_SQL('NOT ', 'tg.code LIKE ?')}))`);
+    });
+  });
+
+  describe('shared behaviour', () => {
+    test('repeated values are one subquery each, ANDed: "has a AND has b"', () => {
+      const op = operators.for('tag[in]=a&tag[in]=b')
+                          .where.add('tag', 'tg.code', TAG_OPS, EXISTS);
+
+      assert.equal(
+        normalize(op.query(VOLUMES)),
+        `${VOLUMES_AND} ((${EXISTS_SQL('', 'tg.code IN ($1)')}) AND (${EXISTS_SQL('', 'tg.code IN ($2)')}))`
+      );
+    });
+
+    test('an empty list adds no subquery at all', () => {
+      const op = operators.for('tag[in]=,,&tag[nin]=')
+                          .where.add('tag', 'tg.code', TAG_OPS, IN);
+
+      assert.equal(op.query(VOLUMES), VOLUMES);
+    });
+
+    test('values are validated with the filter type', () => {
+      const op = operators.for('tagId[in]=1,x')
+                          .where.add('tagId', 'tg.id', ['in'], { type: 'int', ...EXISTS });
+
+      assert.throws(() => op.query(VOLUMES), /Invalid int value for 'tagId'/);
+    });
+
+    test('works next to plain filters, with base parameters and in count()', () => {
+      const op = operators.for('code=A1&tag[nlike]=x')
+                          .where.add('code', 'v.code', ['eq'])
+                          .where.add('tag', 'tg.code', TAG_OPS, EXISTS);
+      const base = 'SELECT v.id FROM volume v WHERE v.company = $1';
+
+      assert.equal(
+        normalize(op.count(base, 7)),
+        `SELECT v.id FROM volume v WHERE (v.company = $1) AND ((v.code = $2) AND (${EXISTS_SQL('NOT ', 'tg.code LIKE $3')}))`
+      );
+      assert.deepEqual(op.values, [7, 'A1', '%x%']);
+    });
+
+    test('required: at least one subquery condition', () => {
+      const declare = (input) => operators.for(input)
+                                          .where.add('tag', 'tg.code', TAG_OPS, { ...IN, required: true });
+
+      assert.throws(() => declare('').query(VOLUMES), /filter tag not supplied/);
+      assert.doesNotThrow(() => declare('tag=x').query(VOLUMES));
+    });
+
+    test('injection payloads only reach `values`', () => {
+      const payload = "x') OR 1=1 --";
+      const op = operators.for({ tag: { nin: payload } })
+                          .where.add('tag', 'tg.code', TAG_OPS, EXISTS);
+
+      assert.ok(!op.query(VOLUMES).includes(payload));
+      assert.deepEqual(op.values, [payload]);
+    });
+  });
+
+  describe('declaration errors', () => {
+    const add = (opts, ops = ['eq'], column = 'tg.code') =>
+      () => operators.for({}).where.add('tag', column, ops, opts);
+
+    test('exists or in, not both', () => {
+      assert.throws(add({ ...EXISTS, ...IN }), /use exists or in, not both/);
+    });
+
+    test('exists: a non-empty string, or { from, where }', () => {
+      assert.throws(add({ exists: '  ;' }), /exists must be a non-empty SQL string/);
+      assert.throws(add({ exists: 5 }), /exists must be \{ from, where \}/);
+      assert.throws(add({ exists: { from: 'tag tg' } }), /exists\.where must be a non-empty string/);
+      assert.throws(add({ exists: { where: 'tg.volume = v.id' } }), /exists\.from must be a non-empty string/);
+      assert.throws(add({ exists: { from: 'tag tg', where: 'x', select: 'y' } }), /unknown exists option 'select'/);
+    });
+
+    test('in: { column, select, from, where? }', () => {
+      assert.throws(add({ in: { select: 'tg.volume', from: 'tag tg' } }), /in\.column must be a non-empty string/);
+      assert.throws(add({ in: { column: 'v.id', from: 'tag tg' } }), /in\.select must be a non-empty string/);
+      assert.throws(add({ in: { column: 'v.id', select: 'tg.volume' } }), /in\.from must be a non-empty string/);
+      assert.throws(add({ in: { column: 'v.id', select: 'tg.volume', from: 'tag tg', where: '' } }), /in\.where must be a non-empty string/);
+      assert.throws(add({ in: { column: 'v.id', select: 'tg.volume', from: 'tag tg', on: 'x' } }), /unknown in option 'on'/);
+      assert.throws(add({ in: 'SELECT tg.volume FROM tag tg' }), /in must be \{ column, select, from, where \}/);
+    });
+
+    test('a plain column only: no functions, no json', () => {
+      assert.throws(add(EXISTS, ['eq'], () => 'x'), /exists needs a plain column/);
+      assert.throws(
+        () => operators.for({}).where.add('tag', 'tg.extra', { type: 'json', paths: { a: 'string' }, ...IN }),
+        /in needs a plain column/
+      );
+    });
+
+    test('the null operator cannot be used', () => {
+      assert.throws(add(EXISTS, ['eq', 'null']), /operator 'null' cannot be used with exists/);
+    });
+  });
+});

@@ -94,6 +94,40 @@
  * bool -> boolean (mysql compares 'true'/'false'). A stored value that does not fit the cast makes
  * the database reject the query, so declare the type the data really has.
  *
+ * Subqueries: `exists` / `in` apply the filter's operators to a column INSIDE a subquery, e.g.
+ * "volumes that have a tag like x". The column of where.add is the inner one (tg.code below).
+ *
+ *   // exists, full: you write the link to the outer row in `where`
+ *   .where.add('tag', 'tg.code', ['like', 'nlike', 'in', 'nin'], {
+ *     exists: { from: 'tag tg', where: 'tg.volume = v.id AND tg.deleted = 0' },
+ *   })
+ *   // exists, short: the whole subquery; the condition is added to its WHERE
+ *   .where.add('tag', 'tg.code', ['like', 'nlike', 'in', 'nin'], {
+ *     exists: 'SELECT 1 FROM tag tg WHERE tg.volume = v.id AND tg.deleted = 0',
+ *   })
+ *   //   ?tag=urgent         ->  EXISTS (SELECT 1 FROM tag tg WHERE (tg.volume = v.id AND tg.deleted = 0) AND (tg.code LIKE $1))
+ *   //   ?tag[nlike]=urgent  ->  NOT EXISTS (… AND (tg.code LIKE $1))
+ *
+ *   // in, full: the lib compares `column` with what the subquery selects
+ *   .where.add('tag', 'tg.code', ['like', 'nlike', 'in', 'nin'], {
+ *     in: { column: 'v.id', select: 'tg.volume', from: 'tag tg', where: 'tg.deleted = 0' },
+ *   })
+ *   //   ?tag=urgent         ->  v.id IN (SELECT tg.volume FROM tag tg WHERE (tg.deleted = 0) AND (tg.code LIKE $1))
+ *   //   ?tag[nlike]=urgent  ->  v.id NOT IN (SELECT … WHERE (tg.deleted = 0) AND (tg.volume IS NOT NULL) AND (tg.code LIKE $1))
+ *
+ *   // in, short: no `where`
+ *   .where.add('tag', 'tg.code', ['like', 'nlike', 'in', 'nin'], {
+ *     in: { column: 'v.id', select: 'tg.volume', from: 'tag tg' },
+ *   })
+ *   //   ?tag[nin]=a,b       ->  v.id NOT IN (SELECT tg.volume FROM tag tg WHERE (tg.volume IS NOT NULL) AND (tg.code IN ($1, $2)))
+ *
+ * Negated operators (neq, nin, nlike, nilike) run their positive form inside and negate the
+ * subquery, so `tag[nlike]=x` means "has NO tag like x". `NOT IN` gets `select IS NOT NULL` so a
+ * NULL returned by the subquery cannot empty the result. Rows whose outer column is NULL are kept
+ * by NOT EXISTS but dropped by NOT IN. Repeated values are one subquery each, ANDed
+ * (tag[in]=a&tag[in]=b: has a AND has b; tag[in]=a,b: has a OR b). `null` is not allowed.
+ * The subquery SQL is the developer's; it must not contain placeholders of its own.
+ *
  * Limits of the base SQL: GROUP BY / HAVING / ORDER BY / LIMIT / OFFSET are detected at the
  * top level (outside parentheses and strings) and WHERE / ORDER BY are inserted before them.
  * UNION is not supported.
@@ -327,6 +361,52 @@ function normalizeJsonPaths(name, paths, filterOperator) {
 }
 
 // ---------------------------------------------------------------------------
+// Subqueries (exists / in)
+// ---------------------------------------------------------------------------
+
+// Negated operators run their positive form inside a subquery, and the subquery itself is negated.
+const NEGATIONS = { neq: 'eq', nin: 'in', nlike: 'like', nilike: 'ilike' };
+
+const SUBQUERY_KEYS = {
+  exists: { required: ['from', 'where'], optional: [] },
+  in: { required: ['column', 'select', 'from'], optional: ['where'] },
+};
+
+/**
+ * Validates the `exists` / `in` option of where.add and returns
+ *   { kind: 'exists', sql }                          (string shortcut: the whole subquery)
+ *   { kind: 'exists', from, where }
+ *   { kind: 'in', column, select, from, where }
+ * or undefined when the filter has neither.
+ */
+function normalizeSubquery(name, opts) {
+  const where = `where.add('${name}')`;
+  if (opts.exists !== undefined && opts.in !== undefined) throw new Error(`${where}: use exists or in, not both`);
+
+  const kind = opts.exists !== undefined ? 'exists' : opts.in !== undefined ? 'in' : undefined;
+  if (!kind) return undefined;
+  const config = opts[kind];
+
+  if (kind === 'exists' && typeof config === 'string') {
+    const sql = config.trim().replace(/[\s;]+$/, '');
+    if (!sql) throw new Error(`${where}: exists must be a non-empty SQL string or { from, where }`);
+    return { kind, sql };
+  }
+
+  const { required, optional } = SUBQUERY_KEYS[kind];
+  if (!isPlainObject(config)) throw new Error(`${where}: ${kind} must be { ${required.concat(optional).join(', ')} }`);
+  for (const key of Object.keys(config)) {
+    if (!required.includes(key) && !optional.includes(key)) throw new Error(`${where}: unknown ${kind} option '${key}'`);
+  }
+  for (const key of required.concat(optional)) {
+    const value = config[key];
+    if (value === undefined && optional.includes(key)) continue;
+    if (typeof value !== 'string' || !value.trim()) throw new Error(`${where}: ${kind}.${key} must be a non-empty string`);
+  }
+  return { kind, ...config };
+}
+
+// ---------------------------------------------------------------------------
 // Input normalization
 // ---------------------------------------------------------------------------
 
@@ -556,6 +636,8 @@ class Operator {
    * `column` may be a function (name, operator, value) => string | { sql, values } | falsy.
    *
    * A json filter takes no operator list: each path declares its own (see normalizeJsonPaths).
+   *
+   * `exists` / `in` (4th argument) apply the operators to `column` inside a subquery (see the header).
    */
   _addWhere(name, column, ops, opts, error) {
     // Short form: the second argument is the operator list, so every argument shifts by one.
@@ -579,6 +661,11 @@ class Operator {
       throw new Error(`where.add('${name}'): required must be a boolean`);
     }
 
+    const subquery = normalizeSubquery(name, opts);
+    if (subquery && (json || typeof column !== 'string')) {
+      throw new Error(`where.add('${name}'): ${subquery.kind} needs a plain column (not a function nor type 'json')`);
+    }
+
     if (json) {
       if (typeof column !== 'string') throw new Error(`where.add('${name}'): type 'json' needs a column, not a function`);
       if (ops !== undefined) {
@@ -593,6 +680,10 @@ class Operator {
         for (const op of ops) {
           if (!OPERATORS[op]) throw new Error(`where.add('${name}'): unknown operator '${op}'`);
         }
+      }
+      // "has a tag that is null" means nothing; "has no tags" is a filter of its own.
+      if (subquery && ops.includes('null')) {
+        throw new Error(`where.add('${name}'): operator 'null' cannot be used with ${subquery.kind}`);
       }
 
       if (opts.operator !== undefined) {
@@ -609,6 +700,7 @@ class Operator {
       ops,
       type,
       paths: json ? normalizeJsonPaths(name, opts.paths, opts.operator) : undefined,
+      subquery,
       // Operator for a value sent without one (json filters resolve it per path).
       operator: json ? undefined : (opts.operator !== undefined ? opts.operator : ops[0]),
       required: opts.required === true,
@@ -787,12 +879,42 @@ class Operator {
     return parts;
   }
 
+  /**
+   * Condition for ONE occurrence on a filter declared with `exists` / `in`: the operator is applied
+   * to the column inside the subquery; a negated operator runs positive inside and negates the subquery.
+   */
+  _subquery(def, op, value, ctx) {
+    const positive = NEGATIONS[op] || op;
+    const negated = positive !== op;
+    const [condition] = this._builtin(def, positive, value, ctx);
+    if (!condition) return []; // e.g. "in=,," -> nothing to filter by
+
+    const sub = def.subquery;
+    const not = negated ? 'NOT ' : '';
+
+    // String shortcut: the developer wrote the whole subquery; add the condition to its WHERE.
+    if (sub.sql) return [`${not}EXISTS (${injectWhere(sub.sql, condition)})`];
+
+    const wheres = [sub.where];
+    // A NULL among the values NOT IN compares with makes it match nothing.
+    if (sub.kind === 'in' && negated) wheres.push(`${sub.select} IS NOT NULL`);
+    wheres.push(condition);
+    const where = wheres.filter(Boolean).map((w) => `(${w})`).join(' AND ');
+
+    return sub.kind === 'exists'
+      ? [`${not}EXISTS (SELECT 1 FROM ${sub.from} WHERE ${where})`]
+      : [`${sub.column} ${not}IN (SELECT ${sub.select} FROM ${sub.from} WHERE ${where})`];
+  }
+
   /** Compiles one declared filter. Returns its SQL fragments (empty when nothing was supplied). */
   _compileFilter(def, ctx) {
     if (def.paths) return this._compileJson(def, ctx);
 
-    const parts = this._conditions(def.name, this._input[def.name], def.ops, def.operator, (op, value) =>
-      typeof def.column === 'function' ? this._custom(def, op, value, ctx) : this._builtin(def, op, value, ctx));
+    const parts = this._conditions(def.name, this._input[def.name], def.ops, def.operator, (op, value) => {
+      if (typeof def.column === 'function') return this._custom(def, op, value, ctx);
+      if (def.subquery) return this._subquery(def, op, value, ctx);
+      return this._builtin(def, op, value, ctx);
+    });
 
     // "required" means: at least one condition must come out of this filter.
     if (def.required && !parts.length) {
