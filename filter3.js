@@ -131,6 +131,45 @@
  * Limits of the base SQL: GROUP BY / HAVING / ORDER BY / LIMIT / OFFSET are detected at the
  * top level (outside parentheses and strings) and WHERE / ORDER BY are inserted before them.
  * UNION is not supported.
+ *
+ * Markers: to put the conditions / the sort somewhere else (e.g. "filter first, join later":
+ * filter, sort and page the ids in a subquery, then join the other tables to that page only),
+ * write them into the base SQL:
+ *
+ *   SELECT o.id, c.name
+ *   FROM (
+ *       SELECT o.id
+ *       FROM "order" o
+ *       WHERE
+ *           o.deleted=0 AND
+ *           o.company=?
+ *           /*filter:where*\/
+ *       /*filter:order*\/
+ *       LIMIT ?,?
+ *   ) page
+ *   INNER JOIN "order" o ON o.id=page.id
+ *   INNER JOIN "clients"."client" c ON c.id=o.client
+ *   /*filter:order*\/
+ *
+ *   /*filter:where*\/  ->  AND (<conditions>), or nothing when there are none. It follows the
+ *                         conditions of an existing WHERE and may appear only once (an Error otherwise).
+ *                         Those conditions are NOT wrapped in parentheses as the automatic injection
+ *                         does: join them with AND, or wrap an OR yourself: WHERE (a=1 OR b=2) /*filter:where*\/
+ *   /*filter:order*\/  ->  ORDER BY <sort>, or nothing when no sort applies; any number of times.
+ *                         count() / toCount() remove them all. Do not combine it with a hand-written
+ *                         ORDER BY at the same level (invalid SQL): pass defaults and tie-breakers
+ *                         through the sort input instead (sort: [req.query.sort, default, tieBreakers].join(',')).
+ *
+ * Each marker only replaces the automatic injection of its own part: with just a where marker the
+ * ORDER BY is still injected at the top level, and vice versa. Markers are case-insensitive and
+ * may have whitespace inside ("/* filter:where *\/"); other comments, and markers inside string
+ * literals, are not looked at specially.
+ *
+ * Placeholders with markers: on pg ($n) filter values are numbered after the base values, so
+ * query(sql, ...baseValues) works wherever the base placeholders are. On mysql (?) values are
+ * positional: when the base SQL has ? AFTER the where marker (LIMIT ?,? above), do not pass base
+ * values to query(); build the array in text order yourself:
+ *   db.query(op.query(sql), [company, ...op.values, start, limit])
  */
 
 // ---------------------------------------------------------------------------
@@ -550,6 +589,13 @@ const FOR_LOCK = 'for\\s+(?:update|share|no\\s+key\\s+update|key\\s+share)';
 const WHERE_END_RE = new RegExp(`\\b(group\\s+by|having|window|order\\s+by|limit|offset|fetch|${FOR_LOCK})\\b`, 'i');
 // ... and the first keyword that ends the ORDER BY area.
 const ORDER_END_RE = new RegExp(`\\b(limit|offset|fetch|${FOR_LOCK})\\b`, 'i');
+
+// Markers that choose where the conditions / the sort go instead of the automatic injection.
+// Case-insensitive, optional whitespace inside the comment: "/* filter:where */" also matches.
+const WHERE_MARKER = /\/\*\s*filter:where\s*\*\//i;
+const WHERE_MARKER_ALL = new RegExp(WHERE_MARKER.source, 'gi');
+const ORDER_MARKER = /\/\*\s*filter:order\s*\*\//i;
+const ORDER_MARKER_ALL = new RegExp(ORDER_MARKER.source, 'gi');
 
 /** Adds `cond` with WHERE (none yet) or AND (WHERE already present), before GROUP BY/HAVING/ORDER BY/LIMIT… */
 function injectWhere(sql, cond) {
@@ -1121,14 +1167,36 @@ class Operator {
 
   _build(sql, baseValues, withOrder) {
     if (typeof sql !== 'string' || !sql.trim()) throw new TypeError('sql must be a non-empty string');
+    // Checked before compiling: a programming mistake wins over any request error.
+    if ((sql.match(WHERE_MARKER_ALL) || []).length > 1) {
+      throw new Error('/*filter:where*/ may appear only once: the filter values would repeat');
+    }
 
     const ctx = this._ctx(baseValues.length);
     const conditions = this._compileWhere(ctx);
     const order = this._compileOrder(); // always validated, even when it is not applied (count)
 
     let text = sql.replace(/[\s;]+$/, ''); // drop trailing whitespace / semicolons
-    if (conditions.length) text = injectWhere(text, conditions.join(' AND '));
-    if (withOrder && order.length) text = injectOrder(text, order.join(', '));
+
+    // A marker replaces the automatic injection of its own part only (see "Markers" in the header).
+    // The replacements are functions: a string would read the "$1" of pg placeholders as a backreference.
+    // Order markers go first: left in place, "WHERE a=1 /*filter:order*/" would be taken by injectWhere
+    // as part of the existing conditions and end up inside its parentheses; replaced, the ORDER BY is
+    // where injectWhere stops.
+    const orderMarker = ORDER_MARKER.test(text);
+    if (orderMarker) {
+      const orderBy = withOrder && order.length ? `ORDER BY ${order.join(', ')}` : '';
+      text = text.replace(ORDER_MARKER_ALL, () => orderBy);
+    }
+
+    if (WHERE_MARKER.test(text)) {
+      const where = conditions.length ? `AND (${conditions.join(' AND ')})` : '';
+      text = text.replace(WHERE_MARKER_ALL, () => where);
+    } else if (conditions.length) {
+      text = injectWhere(text, conditions.join(' AND '));
+    }
+
+    if (!orderMarker && withOrder && order.length) text = injectOrder(text, order.join(', '));
 
     return { text, values: [...baseValues, ...ctx.values] };
   }

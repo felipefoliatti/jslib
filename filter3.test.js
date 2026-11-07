@@ -1679,3 +1679,195 @@ describe('subqueries: exists and in', () => {
     });
   });
 });
+
+// ===========================================================================
+describe('markers: /*filter:where*/ and /*filter:order*/', () => {
+  // "Filter first, join later": filter, sort and page the ids in a subquery, then join the page.
+  const PAGE = `SELECT o.id, c.name
+    FROM (
+        SELECT o.id
+        FROM "order" o
+        WHERE
+            o.deleted=0 AND
+            o.company=$1
+            /*filter:where*/
+        /*filter:order*/
+        LIMIT $2 OFFSET $3
+    ) page
+    INNER JOIN "order" o ON o.id=page.id
+    INNER JOIN "clients"."client" c ON c.id=o.client
+    /*filter:order*/`;
+
+  const declare = (input, options) => operators.for(input, options)
+                                               .where.add('status', 'o.status', ['in'], { type: 'int' })
+                                               .where.add('code', 'o.code', ['like'])
+                                               .order.add('date', 'o.created_at')
+                                               .order.add('id', 'o.id');
+
+  test('the where marker inside a subquery receives AND (<conditions>)', () => {
+    const op = declare('status=1,2&code=ab');
+
+    assert.equal(
+      normalize(op.query(PAGE, 'acme', 10, 0)),
+      'SELECT o.id, c.name FROM ( SELECT o.id FROM "order" o WHERE o.deleted=0 AND o.company=$1 ' +
+      'AND ((o.status IN ($4, $5)) AND (o.code LIKE $6)) LIMIT $2 OFFSET $3 ) page ' +
+      'INNER JOIN "order" o ON o.id=page.id INNER JOIN "clients"."client" c ON c.id=o.client'
+    );
+    assert.deepEqual(op.values, ['acme', 10, 0, 1, 2, '%ab%']);
+  });
+
+  test('without conditions the where marker is removed and the base SQL is left intact', () => {
+    const op = operators.for('')
+                        .where.add('status', 'o.status', ['in'], { type: 'int' });
+
+    assert.equal(
+      op.query('SELECT o.id FROM "order" o WHERE o.deleted=0 /*filter:where*/ LIMIT 5'),
+      'SELECT o.id FROM "order" o WHERE o.deleted=0  LIMIT 5'
+    );
+    assert.deepEqual(op.values, []);
+  });
+
+  test('two where markers are a programming error (a plain Error, not a FilterError)', () => {
+    const op = declare('status=1');
+    const sql = 'SELECT 1 FROM t o WHERE a=1 /*filter:where*/ UNION SELECT 1 FROM t o WHERE b=1 /*filter:where*/';
+
+    const err = thrown(() => op.query(sql));
+    assert.ok(!(err instanceof FilterError));
+    assert.match(err.message, /\/\*filter:where\*\/ may appear only once/);
+  });
+
+  test('the order marker may repeat: every one gets the same ORDER BY', () => {
+    const op = declare('sort=-date,id');
+
+    const text = normalize(op.query(PAGE, 'acme', 10, 0));
+    assert.ok(text.includes('WHERE o.deleted=0 AND o.company=$1 ORDER BY o.created_at DESC, o.id ASC LIMIT $2 OFFSET $3 ) page'));
+    assert.ok(text.endsWith('c.id=o.client ORDER BY o.created_at DESC, o.id ASC'));
+    assert.deepEqual(op.values, ['acme', 10, 0]); // the sort has no placeholders
+  });
+
+  test('without a sort every order marker is removed', () => {
+    const op = declare('status=1');
+
+    const text = op.query(PAGE, 'acme', 10, 0);
+    assert.ok(!/order by/i.test(text));
+    assert.ok(!text.includes('/*'));
+  });
+
+  test('count() removes every order marker but still fills the where marker', () => {
+    const op = declare('status=3&sort=-date');
+    const sql = `SELECT count(1) FROM (
+                   SELECT o.id FROM "order" o WHERE o.company=$1 /*filter:where*/ /*filter:order*/
+                 ) page /*filter:order*/`;
+
+    assert.equal(
+      normalize(op.count(sql, 'acme')),
+      'SELECT count(1) FROM ( SELECT o.id FROM "order" o WHERE o.company=$1 AND ((o.status IN ($2))) ) page'
+    );
+    assert.deepEqual(op.values, ['acme', 3]);
+  });
+
+  test('only a where marker: the ORDER BY is still injected at the top level', () => {
+    const op = declare('status=1&sort=-date');
+
+    assert.equal(
+      normalize(op.query('SELECT * FROM (SELECT o.id FROM "order" o WHERE o.deleted=0 /*filter:where*/) o')),
+      'SELECT * FROM (SELECT o.id FROM "order" o WHERE o.deleted=0 AND ((o.status IN ($1)))) o ORDER BY o.created_at DESC'
+    );
+  });
+
+  test('only an order marker: the WHERE is still injected at the top level', () => {
+    const op = declare('status=1&sort=-date');
+
+    assert.equal(
+      normalize(op.query('SELECT o.id FROM "order" o WHERE o.deleted=0 /*filter:order*/ LIMIT 5')),
+      'SELECT o.id FROM "order" o WHERE (o.deleted=0) AND ((o.status IN ($1))) ORDER BY o.created_at DESC LIMIT 5'
+    );
+  });
+
+  test('markers are case-insensitive and may have whitespace inside; other comments are left alone', () => {
+    const op = declare('status=1&sort=id');
+
+    assert.equal(
+      normalize(op.query('SELECT o.id FROM "order" o WHERE o.deleted=0 /* Filter:WHERE */ /* keep me */ /*  FILTER:order  */')),
+      'SELECT o.id FROM "order" o WHERE o.deleted=0 AND ((o.status IN ($1))) /* keep me */ ORDER BY o.id ASC'
+    );
+  });
+
+  test('pg: base placeholders before and after the marker keep their numbers; filter values come after', () => {
+    const op = declare('status=7,8&sort=id');
+    const { text, values } = op.toQuery(PAGE, 'acme', 20, 40);
+
+    assert.ok(normalize(text).includes('o.company=$1 AND ((o.status IN ($4, $5))) ORDER BY o.id ASC LIMIT $2 OFFSET $3'));
+    assert.deepEqual(values, ['acme', 20, 40, 7, 8]);
+  });
+
+  test('mysql: with ? after the marker, the caller builds the values in text order', () => {
+    const op = declare('status=7,8&code=x&sort=-date', { dialect: 'mysql' });
+    const sql = `SELECT o.id, c.name
+                 FROM (
+                     SELECT o.id FROM "order" o
+                     WHERE o.deleted=0 AND o.company=? /*filter:where*/
+                     /*filter:order*/
+                     LIMIT ?,?
+                 ) page
+                 INNER JOIN "clients"."client" c ON c.id=o.client
+                 /*filter:order*/`;
+
+    // No base values passed: [...baseValues, ...filterValues] would put start/limit before the filters.
+    const text = op.query(sql);
+    const values = ['acme', ...op.values, 40, 20];
+
+    assert.equal(
+      normalize(text),
+      'SELECT o.id, c.name FROM ( SELECT o.id FROM "order" o WHERE o.deleted=0 AND o.company=? ' +
+      'AND ((o.status IN (?, ?)) AND (o.code LIKE ?)) ORDER BY o.created_at DESC LIMIT ?,? ) page ' +
+      'INNER JOIN "clients"."client" c ON c.id=o.client ORDER BY o.created_at DESC'
+    );
+    // One value per ?, in the order the ? appear in the text.
+    assert.equal(text.split('?').length - 1, values.length);
+    assert.deepEqual(values, ['acme', 7, 8, '%x%', 40, 20]);
+  });
+
+  test('an OR before the marker must be parenthesised by the developer', () => {
+    const op = declare('status=1');
+
+    // The marker cannot wrap the base conditions: without the parentheses the AND would bind to b=2 only.
+    assert.equal(
+      normalize(op.query('SELECT 1 FROM t o WHERE (a=1 OR b=2) /*filter:where*/')),
+      'SELECT 1 FROM t o WHERE (a=1 OR b=2) AND ((o.status IN ($1)))'
+    );
+  });
+
+  test('a subquery filter (exists / in) is rendered through the where marker', () => {
+    const op = operators.for('tag[nlike]=urgent&volume[nin]=5')
+                        .where.add('tag', 'tg.code', ['like', 'nlike'], {
+                          exists: { from: 'tag tg', where: 'tg.order = o.id AND tg.deleted = 0' },
+                        })
+                        .where.add('volume', 'vo.number', ['in', 'nin'], {
+                          type: 'int', in: { column: 'o.id', select: 'vo.order', from: 'volume vo' },
+                        });
+
+    assert.equal(
+      normalize(op.query('SELECT * FROM (SELECT o.id FROM "order" o WHERE o.deleted=0 /*filter:where*/ LIMIT 10) page')),
+      'SELECT * FROM (SELECT o.id FROM "order" o WHERE o.deleted=0 AND (' +
+      '(NOT EXISTS (SELECT 1 FROM tag tg WHERE (tg.order = o.id AND tg.deleted = 0) AND (tg.code LIKE $1))) AND ' +
+      '(o.id NOT IN (SELECT vo.order FROM volume vo WHERE (vo.order IS NOT NULL) AND (vo.number IN ($2)))))' +
+      ' LIMIT 10) page'
+    );
+    assert.deepEqual(op.values, ['%urgent%', 5]);
+  });
+
+  test('a query without markers is byte-identical to the automatic injection', () => {
+    const op = operators.for('qtd[gt]=1&sort=-date')
+                        .where.add('qtd', 'adr.qtd', ['gt'], { type: 'int' })
+                        .order.add('date', 'adr.created_at', ['asc', 'desc']);
+    const sql = 'SELECT adr.id, count(*) FROM t adr WHERE a=1 GROUP BY adr.id HAVING count(*) > 1 LIMIT 10 OFFSET 20';
+
+    // Exact text (not normalized), as produced before markers existed.
+    assert.equal(
+      op.query(sql),
+      'SELECT adr.id, count(*) FROM t adr WHERE (a=1) AND ((adr.qtd > $1))\n' +
+      'GROUP BY adr.id HAVING count(*) > 1\nORDER BY adr.created_at DESC\nLIMIT 10 OFFSET 20'
+    );
+  });
+});
