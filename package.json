@@ -1,10 +1,10 @@
 {
   "name": "jslib",
-  "version": "1.0.33",
+  "version": "1.0.34",
   "description": "",
   "main": "logger.js",
   "scripts": {
-    "test": "node --test filter3.test.js"
+    "test": "node --test filter3.test.js queue/amq/v1/queue.test.js"
   },
   "engines": {
     "node": ">=18"
@@ -18,5 +18,9 @@
   "bugs": {
     "url": "https://github.com/felipefoliatti/jslib/issues"
   },
-  "homepage": "https://github.com/felipefoliatti/jslib#readme"
+  "homepage": "https://github.com/felipefoliatti/jslib#readme",
+  "devDependencies": {
+    "guid": "^0.0.12",
+    "stomp-client": "github:felipefoliatti/node-stomp-client"
+  }
 }
