@@ -128,6 +128,21 @@
  * (tag[in]=a&tag[in]=b: has a AND has b; tag[in]=a,b: has a OR b). `null` is not allowed.
  * The subquery SQL is the developer's; it must not contain placeholders of its own.
  *
+ * Always: `where.always(rule)` adds a condition to every query, whatever the input: e.g. what the
+ * token may see. It is not a filter (no name; input, strict, markers and filter errors don't touch it)
+ * and is applied even when no filter is sent, parenthesized and ANDed like the other conditions.
+ * Its values come first, right after the base values. Callable more than once (each one is ANDed).
+ *
+ *   operators.for(req.query, { dialect: 'mysql' })
+ *     .where.always(auth.where(req, 'vehicles', 'v'))     // { sql: '(v.branch IN (?))', values: [['A']] }
+ *     .where.add('id', 'v.id', ['in', 'nin'])
+ *
+ *   ?id=v1  ->  WHERE (v.deleted=0 AND v.company=?) AND (((v.branch IN (?))) AND (v.id IN (?)))
+ *               values: [company, ['A'], 'v1']
+ *
+ * It takes { sql, values } (each "?" takes the next value, "??" is a literal "?"; the count is checked),
+ * a plain string (trusted sql, used verbatim) or null / undefined (ignored).
+ *
  * Limits of the base SQL: GROUP BY / HAVING / ORDER BY / LIMIT / OFFSET are detected at the
  * top level (outside parentheses and strings) and WHERE / ORDER BY are inserted before them.
  * UNION is not supported.
@@ -661,11 +676,15 @@ class Operator {
 
     this._input = normalize(input);
     this._filters = []; // declared by where.add
+    this._always = [];  // declared by where.always: { sql, values } applied to every query
     this._orders = [];  // declared by order.add
     this._base = [];    // parameters already used by the base SQL (see query())
 
     // Both return `this`, which is what makes  .where.add(...).where.add(...).order.add(...)  chainable.
-    this.where = { add: (...args) => { this._addWhere(...args); return this; } };
+    this.where = {
+      add: (...args) => { this._addWhere(...args); return this; },
+      always: (rule) => { this._addAlways(rule); return this; },
+    };
     this.order = { add: (...args) => { this._addOrder(...args); return this; } };
   }
 
@@ -752,6 +771,37 @@ class Operator {
       required: opts.required === true,
       error: normalizeErrorConfig(error, `where.add('${name}')`),
     });
+  }
+
+  /**
+   * where.always({ sql, values }) | where.always('trusted sql') | where.always(null)
+   *
+   * A condition applied to every query, whatever the input (e.g. auth.where(...)). Same placeholder
+   * convention as the { sql, values } of a custom column: each "?" takes the next value, "??" is a
+   * literal "?". null / undefined are ignored, so an optional rule can be passed as it is.
+   */
+  _addAlways(rule) {
+    if (rule === null || rule === undefined) return;
+
+    if (typeof rule === 'string') {
+      if (!rule.trim()) throw new Error('where.always: sql must be a non-empty string');
+      this._always.push({ sql: rule, values: [] });
+      return;
+    }
+
+    if (!isPlainObject(rule) || typeof rule.sql !== 'string' || !rule.sql.trim()) {
+      throw new TypeError('where.always: expected { sql, values }, a string or null');
+    }
+    const values = rule.values === undefined ? [] : rule.values;
+    if (!Array.isArray(values)) throw new TypeError('where.always: values must be an array');
+
+    // Checked now: a mismatch is a programming error, not something the request can cause.
+    const placeholders = (rule.sql.match(/\?\?|\?/g) || []).filter((m) => m === '?').length;
+    if (placeholders !== values.length) {
+      throw new Error(`where.always: sql has ${placeholders} placeholder(s) but ${values.length} value(s)`);
+    }
+
+    this._always.push({ sql: rule.sql, values: [...values] });
   }
 
   /**
@@ -1085,6 +1135,12 @@ class Operator {
   }
 
   _compileWhere(ctx) {
+    // where.always first: its values come right after the base values, before the filters'.
+    const always = this._always.map(({ sql, values }) => {
+      let used = 0;
+      return sql.replace(/\?\?|\?/g, (m) => (m === '??' ? '?' : ctx.param(values[used++])));
+    });
+
     if (this.options.strict) {
       for (const key of Object.keys(this._input)) {
         const known = key === this.options.sortKey ||
@@ -1105,7 +1161,7 @@ class Operator {
     }
 
     // Parenthesize each fragment: a custom SQL containing OR must not leak into its neighbours.
-    return out.map((c) => `(${c})`);
+    return [...always, ...out].map((c) => `(${c})`);
   }
 
   /** Parses `sort=qtd,-date` (or an array / { field: 'asc' } object) into ["adr.qtd ASC", ...]. */

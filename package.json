@@ -1,10 +1,10 @@
 {
   "name": "jslib",
-  "version": "1.0.34",
+  "version": "1.0.35",
   "description": "",
   "main": "logger.js",
   "scripts": {
-    "test": "node --test filter3.test.js queue/amq/v1/queue.test.js"
+    "test": "node --test filter3.test.js access.test.js auth.test.js cache.test.js queue/amq/v1/queue.test.js"
   },
   "engines": {
     "node": ">=18"
@@ -22,5 +22,8 @@
   "devDependencies": {
     "guid": "^0.0.12",
     "stomp-client": "github:felipefoliatti/node-stomp-client"
+  },
+  "dependencies": {
+    "jsonwebtoken": "8.1.0"
   }
 }

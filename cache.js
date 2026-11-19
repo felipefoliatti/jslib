@@ -17,19 +17,29 @@ class Cache {
     chunk = null;
 
     static fn = {
-        DEFAULT_REQUEST: ({uri, key, version, limit}) =>
-            (async function ({req, keys}={}) { 
+        //params: fixed query params merged into qs (e.g. {including: 'other-vehicles'})
+        //forward: send the caller's authorization (default false). the cache is shared by every user, so a
+        //response that depends on the token would be served to the others; without a token the call is internal
+        DEFAULT_REQUEST: ({uri, key, version, limit, params, forward}) =>
+            (async function ({req, keys}={}) {
+
+                let query = {
+                    version: (version || '1'),
+                    [key ?? 'id']: keys.join(','),
+                    limit: (limit || keys.length || '*')
+                };
+
+                if (params) Object.assign(query, params);
+
+                let headers = {};
+                let authorization = forward ? req?.get?.('authorization') : null;
+                if (authorization) headers['authorization'] = authorization;
+
                 return await request({
-                    method: 'GET', 
-                    uri: uri, 
-                    headers: {
-                        'authorization': req.get('authorization') 
-                    },
-                    qs: { 
-                        version: (version || '1'), 
-                        [key ?? 'id']: keys.join(','), 
-                        limit: (limit || keys.length || '*') 
-                    },
+                    method: 'GET',
+                    uri: uri,
+                    headers: headers,
+                    qs: query,
                     json: true
                 });
             }),
@@ -124,7 +134,7 @@ class Cache {
                     }
                 }
             } catch(ex){
-                console.log(`${key} - ${new Date().toISOString()} - wrong data received: ${data}`);
+                console.log(`${this.key} - ${new Date().toISOString()} - wrong data received: ${data}`);
             }
         });
     }   

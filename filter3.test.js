@@ -1871,3 +1871,135 @@ describe('markers: /*filter:where*/ and /*filter:order*/', () => {
     );
   });
 });
+
+// ===========================================================================
+describe('where.always: a condition applied to every query', () => {
+  // What auth.where(req, 'vehicles', 'v') returns for a token restricted to branch A.
+  const RULE = { sql: '(adr.branch IN (?))', values: [['A']] };
+
+  test('{ sql, values } goes first: values are base, always, filters (pg numbering continues)', () => {
+    const op = operators.for('product[in]=7,8')
+                        .where.always(RULE)
+                        .where.add('product', 'adr.id', ['in'], { type: 'int' });
+
+    assert.equal(
+      normalize(op.query(`${BASE} AND adr.owner = $1`, 'me')),
+      `${SELECT} WHERE (adr.deleted=0 AND adr.owner = $1) AND (((adr.branch IN ($2))) AND (adr.id IN ($3, $4)))`
+    );
+    assert.deepEqual(op.values, ['me', ['A'], 7, 8]);
+  });
+
+  test('count() applies it too, without ORDER BY', () => {
+    const op = operators.for('sort=-date')
+                        .where.always(RULE)
+                        .order.add('date', 'adr.created_at');
+
+    assert.equal(normalize(op.count(BASE)), `${BASE_AND} (((adr.branch IN ($1))))`);
+    assert.deepEqual(op.values, [['A']]);
+  });
+
+  test('toQuery / toCount return the same text and values', () => {
+    const op = operators.for('product=1')
+                        .where.always(RULE)
+                        .where.add('product', 'adr.id', ['in'], { type: 'int' });
+
+    const query = op.toQuery(BASE);
+    assert.equal(normalize(query.text), `${BASE_AND} (((adr.branch IN ($1))) AND (adr.id IN ($2)))`);
+    assert.deepEqual(query.values, [['A'], 1]);
+    assert.deepEqual(op.toCount(BASE).values, [['A'], 1]);
+  });
+
+  test('mysql: ? placeholders, each list as one array value', () => {
+    const op = operators.for('product=1,2', { dialect: 'mysql' })
+                        .where.always(RULE)
+                        .where.add('product', 'adr.id', ['in'], { type: 'int' });
+
+    assert.equal(normalize(op.query(`${BASE} AND adr.company=?`, 'c1')), `${SELECT} WHERE (adr.deleted=0 AND adr.company=?) AND (((adr.branch IN (?))) AND (adr.id IN (?, ?)))`);
+    assert.deepEqual(op.values, ['c1', ['A'], 1, 2]);
+  });
+
+  test('it is applied even when no filter is sent', () => {
+    const op = operators.for('')
+                        .where.always(RULE)
+                        .where.add('product', 'adr.id', ['in'], { type: 'int' });
+
+    assert.equal(normalize(op.query(BASE)), `${BASE_AND} (((adr.branch IN ($1))))`);
+    assert.deepEqual(op.values, [['A']]);
+  });
+
+  test('a plain string is used verbatim; null and undefined are ignored', () => {
+    const op = operators.for('')
+                        .where.always('1=0')
+                        .where.always(null)
+                        .where.always(undefined);
+
+    assert.equal(normalize(op.query(BASE)), `${BASE_AND} ((1=0))`);
+    assert.deepEqual(op.values, []);
+
+    const none = operators.for('').where.always(null);
+    assert.equal(none.query(BASE), BASE);
+  });
+
+  test('called twice: both are ANDed, in declaration order', () => {
+    const op = operators.for('', { dialect: 'mysql' })
+                        .where.always(RULE)
+                        .where.always({ sql: 'adr.kind = ?', values: [3] });
+
+    assert.equal(normalize(op.query(BASE)), `${BASE_AND} (((adr.branch IN (?))) AND (adr.kind = ?))`);
+    assert.deepEqual(op.values, [['A'], 3]);
+  });
+
+  test('?? is a literal ?', () => {
+    const op = operators.for('')
+                        .where.always({ sql: "adr.tags ?? 'x' AND adr.kind = ?", values: [3] });
+
+    assert.equal(normalize(op.query(BASE)), `${BASE_AND} ((adr.tags ? 'x' AND adr.kind = $1))`);
+    assert.deepEqual(op.values, [3]);
+  });
+
+  test('with markers: it goes into the where marker, before the filters', () => {
+    const op = operators.for('product=7&sort=-date', { dialect: 'mysql' })
+                        .where.always(RULE)
+                        .where.add('product', 'adr.id', ['in'], { type: 'int' })
+                        .order.add('date', 'adr.created_at');
+
+    const sql = 'SELECT * FROM (SELECT adr.id FROM t adr WHERE adr.company=? /*filter:where*/ /*filter:order*/ LIMIT ?,?) page';
+
+    assert.equal(
+      normalize(op.query(sql)),
+      'SELECT * FROM (SELECT adr.id FROM t adr WHERE adr.company=? AND (((adr.branch IN (?))) AND (adr.id IN (?))) ORDER BY adr.created_at DESC LIMIT ?,?) page'
+    );
+    assert.deepEqual(['c1', ...op.values, 0, 10], ['c1', ['A'], 7, 0, 10]);
+  });
+
+  test('strict mode, the input and filter errors do not touch it', () => {
+    const op = operators.for('product=1', { strict: true })
+                        .where.always(RULE)
+                        .where.add('product', 'adr.id', ['in'], { type: 'int' });
+    assert.equal(normalize(op.query(BASE)), `${BASE_AND} (((adr.branch IN ($1))) AND (adr.id IN ($2)))`);
+
+    // an input named like the column of the rule is not a filter: strict still rejects it
+    const unknown = operators.for('branch=B', { strict: true }).where.always(RULE);
+    assert.throws(() => unknown.query(BASE), /Unknown filter 'branch'/);
+  });
+
+  test('declaration errors: placeholder / value mismatch, wrong types, empty sql', () => {
+    const op = operators.for('');
+
+    assert.throws(() => op.where.always({ sql: 'a IN (?) AND b = ?', values: [['A']] }), /2 placeholder\(s\) but 1 value\(s\)/);
+    assert.throws(() => op.where.always({ sql: 'a = 1', values: [1] }), /0 placeholder\(s\) but 1 value\(s\)/);
+    assert.throws(() => op.where.always({ sql: 'a = ?', values: 'x' }), /values must be an array/);
+    assert.throws(() => op.where.always({ values: [] }), /expected \{ sql, values \}/);
+    assert.throws(() => op.where.always(42), /expected \{ sql, values \}/);
+    assert.throws(() => op.where.always('  '), /non-empty string/);
+  });
+
+  test('the rule values are copied: changing the array afterwards does not change the query', () => {
+    const rule = { sql: 'adr.kind = ?', values: [3] };
+    const op = operators.for('').where.always(rule);
+    rule.values[0] = 99;
+
+    op.query(BASE);
+    assert.deepEqual(op.values, [3]);
+  });
+});
