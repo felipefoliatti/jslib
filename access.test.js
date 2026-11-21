@@ -8,7 +8,7 @@ const { describe, test } = runner;
 
 const assert = require('assert').strict;
 const access = require('./access');
-const { AccessError, MAX_LIST, FULL } = access;
+const { AccessError, MAX_LIST, DEFAULT } = access;
 
 // ---------------------------------------------------------------------------
 // Fixtures and helpers
@@ -408,7 +408,8 @@ describe('chain', () => {
     const user = level(row('*', FALLBACK, { branch: ['$self'] }));
     const parent = level(row('$branches', FALLBACK, false));
 
-    assert.deepEqual(access.chain([user, null, parent, undefined, FULL]), [user, parent, FULL]);
+    assert.deepEqual(access.chain([user, null, parent, undefined, DEFAULT]), [user, parent, DEFAULT]);
+    assert.equal(access.chain([user, null, parent, undefined, DEFAULT]).slice(-1)[0], DEFAULT);
   });
 
   test('nothing configured: an empty chain', () => {
@@ -416,9 +417,32 @@ describe('chain', () => {
     assert.deepEqual(access.chain(undefined), []);
   });
 
-  test('FULL is the implicit full level for admins', () => {
-    assert.deepEqual(FULL, { '*': { '*': { branch: '*' } }, '$branches': { '*': { branch: '*' } } });
-    assert.deepEqual(access.options(access.chain([null, FULL]), BRANCHES), [A, B, C, '$branches']);
+});
+
+// ===========================================================================
+describe('DEFAULT', () => {
+  test('its shape: the selected branch, and $branches for "Todas" (no null rows)', () => {
+    assert.deepEqual(DEFAULT, { '*': { '*': { branch: ['$self'] } }, '$branches': { '*': { branch: ['$branches'] } } });
+  });
+
+  test('options: every branch and $branches', () => {
+    assert.deepEqual(access.options([DEFAULT], BRANCHES), [A, B, C, '$branches']);
+    assert.deepEqual(access.options(access.chain([null, DEFAULT]), BRANCHES), [A, B, C, '$branches']);
+  });
+
+  test('resolve a branch: only that branch', () => {
+    assert.deepEqual(access.resolve([DEFAULT], { branch: A, branches: BRANCHES }), { '*': { branch: [A] } });
+  });
+
+  test('resolve $branches: the branches, or every branch with all', () => {
+    assert.deepEqual(access.resolve([DEFAULT], { branch: '$branches', branches: BRANCHES }), { '*': { branch: BRANCHES } });
+    assert.deepEqual(access.resolve([DEFAULT], { branch: '$branches', branches: BRANCHES, all: true }), { '*': { branch: '*' } });
+  });
+
+  test('a user level with entity rows only: the entity from the user, the fallback from DEFAULT', () => {
+    const user = level(row('*', ITEMS, { id: ['i1'] }));
+    assert.deepEqual(access.resolve([user, DEFAULT], { branch: A, branches: BRANCHES }), { '*': { branch: [A] }, items: { id: ['i1'] } });
+    assert.deepEqual(access.resolve([user, DEFAULT], { branch: '$branches', branches: BRANCHES }), { '*': { branch: BRANCHES } });
   });
 });
 
@@ -468,7 +492,7 @@ describe('options', () => {
   });
 
   test('$branches whose fallback resolves to nothing is not an option', () => {
-    // validateOne rejects [null], but levels can also be built by hand (FULL, tests): options must handle it
+    // validateOne rejects [null], but levels can also be built by hand (DEFAULT, tests): options must handle it
     assert.deepEqual(access.options([{ '$branches': { '*': { branch: [null] } } }], BRANCHES), []);
     assert.deepEqual(access.options([level(row('$branches', FALLBACK, { branch: ['$branches'] }))], []), []);
     assert.deepEqual(access.options([level(row('$branches', FALLBACK, { branch: '*' }))], []), ['$branches']);
@@ -483,6 +507,30 @@ describe('options', () => {
     assert.deepEqual(access.options(levels, []), []);
     assert.deepEqual(access.options(levels, BRANCHES), [A, B, C, '$branches']);
     assert.deepEqual(access.resolve(levels, { branch: '$branches', branches: BRANCHES, all: true }), { '*': { branch: '*' } });
+  });
+
+  describe('all', () => {
+    test('empty branches: "Todas" is offered with all, nothing without it', () => {
+      assert.deepEqual(access.options([DEFAULT], [], true), ['$branches']);
+      assert.deepEqual(access.options([DEFAULT], []), []);
+    });
+
+    test('a false $branches fallback in a nearer level still blocks "Todas"', () => {
+      const blocked = level(row('$branches', FALLBACK, false));
+      assert.deepEqual(access.options([blocked, DEFAULT], BRANCHES, true), [A, B, C]);
+      assert.deepEqual(access.options([blocked, DEFAULT], [], true), []);
+    });
+
+    test('only $branches becomes "*": a fallback of [null] is not offered, a list of ids is', () => {
+      assert.deepEqual(access.options([{ '$branches': { '*': { branch: [null] } } }], BRANCHES, true), []);
+      assert.deepEqual(access.options([{ '$branches': { '*': { branch: [null] } } }], [], true), []);
+      assert.deepEqual(access.options([{ '$branches': { '*': { branch: [B] } } }], [], true), ['$branches']);
+    });
+
+    test('branch ids are still limited to branches', () => {
+      assert.deepEqual(access.options([DEFAULT], [A], true), [A, '$branches']);
+      assert.deepEqual(access.options([level(fallback(D), fallback(A))], BRANCHES, true), [A]);
+    });
   });
 });
 
@@ -578,12 +626,9 @@ describe('resolve', () => {
       assert.deepEqual(access.resolve(levels, { branch: '$branches', branches: BRANCHES }), { '*': { branch: [B] } });
     });
 
-    test('FULL as the last level still gives everything', () => {
-      assert.deepEqual(access.resolve([FULL], { branch: A, branches: BRANCHES }), { '*': { branch: '*' } });
-      assert.deepEqual(access.resolve([FULL], { branch: '$branches', branches: BRANCHES }), { '*': { branch: '*' } });
-
-      const user = level(row('*', ITEMS, { id: ['i1'] })); // entity rows only: the fallback comes from FULL
-      assert.deepEqual(access.resolve([user, FULL], { branch: A, branches: BRANCHES }), { '*': { branch: '*' }, items: { id: ['i1'] } });
+    test('all with empty branches: $branches resolves to every branch; without all it is not an option', () => {
+      assert.deepEqual(access.resolve([DEFAULT], { branch: '$branches', branches: [], all: true }), { '*': { branch: '*' } });
+      assert.throws(() => access.resolve([DEFAULT], { branch: '$branches', branches: [] }), /not an option/);
     });
   });
 

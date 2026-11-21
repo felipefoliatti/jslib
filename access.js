@@ -4,8 +4,8 @@
 //
 //   validate(rows, schema)                      before saving a row ([row]) or linking rows to a user or group
 //   level(rows, schema)                         the level of one user or group, from its rows
-//   chain(levels)                               the levels of a user (user, group, parents), strongest first
-//   options(chain, branches)                    the branches (and '$branches') the user can select
+//   chain(levels)                               the levels of a user (user, group, parents, DEFAULT), strongest first
+//   options(chain, branches, all)               the branches (and '$branches') the user can select
 //   resolve(chain, { branch, branches, all })   the context of a request, placeholders replaced
 //   checkSchema(schema)                         the schema check, shared with auth.js
 //
@@ -65,8 +65,11 @@
 
 const MAX_LIST = 200; //the resolved access travels in a header
 
-//the implicit full level appended to the chain of admins
-const FULL = { '*': { '*': { branch: '*' } }, '$branches': { '*': { branch: '*' } } };
+//the implicit last level of every chain: today's behavior (the selected branch; "Todas" = the user's branches,
+//or every branch with all). rows without a branch (null) are not included, the same as the services' filter today.
+//there is no full level: admin rights (.*) are about permissions, not about which rows are visible. a full level
+//would widen what an admin limited to some branches sees (an admin of [A, B] who selects A would see every branch)
+const DEFAULT = { '*': { '*': { branch: ['$self'] } }, '$branches': { '*': { branch: ['$branches'] } } };
 
 const GUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const PLACEHOLDERS = ['$self', '$branches'];
@@ -342,12 +345,12 @@ function mergeList(a, b, path) {
 // chain, options, resolve
 // ---------------------------------------------------------------------------
 
-//levels from the strongest to the weakest (user, group, parent, grandparent, FULL); empty ones removed
+//levels from the strongest to the weakest (user, group, parent, grandparent, DEFAULT); empty ones removed
 function chain(levels) {
     return (levels || []).filter(level => level !== null && level !== undefined);
 }
 
-// resolution is per entity, the levels strongest first (user, group, parent, grandparent, FULL for admins).
+// resolution is per entity, the levels strongest first (user, group, parent, grandparent, DEFAULT).
 // for the selected branch X:
 //
 //   fallback ('*' block) of X:  the first level that has (X, '*') or ('*', '*'); within that level X wins over '*'
@@ -376,10 +379,12 @@ function lookup(levels, keys, entity) {
 }
 
 //the branch ids (of branches) whose fallback resolves, plus '$branches' when it can be selected.
-//$branches resolves against branches (there is no all here): an empty branches means no options, never
-//every branch. for a user without branches of their own (who may work in every branch of the company),
-//pass the company's branches here and all: true to resolve
-function options(levels, branches) {
+//all: true when the user has no branches of their own (pass the company's branches as branches):
+//  with all, $branches means every branch ('*'), so it is an option even when branches is empty.
+//  without all, an empty branches still means no options, never every branch.
+//all only changes $branches: branch ids are still limited to branches, and a false $branches fallback in a
+//nearer level still blocks the option
+function options(levels, branches, all = false) {
     //entity rows alone don't make a branch selectable: it needs a fallback in some level
     const out = branches.filter(id => lookup(levels, keysOf(id), '*').found);
 
@@ -387,7 +392,7 @@ function options(levels, branches) {
     //false blocks the levels below
     const fallback = lookup(levels, keysOf('$branches'), '*');
     if (fallback.found && isObject(fallback.value) &&
-        hasBranch(resolveValue(fallback.value.branch, { branch: '$branches', branches, all: false }))) {
+        hasBranch(resolveValue(fallback.value.branch, { branch: '$branches', branches, all }))) {
         out.push('$branches');
     }
 
@@ -399,10 +404,11 @@ const hasBranch = value => value === '*' || (Array.isArray(value) && value.some(
 //returns the access of one request: the rules of the selected branch, combining all the levels.
 //
 //input:
-//  levels    the levels of the user, nearest first (user, group, parent, grandparent, FULL for admins)
-//  branch    the selected branch, a branch id or '$branches': it must be one of options(levels, branches)
+//  levels    the levels of the user, nearest first (user, group, parent, grandparent, DEFAULT)
+//  branch    the selected branch, a branch id or '$branches': it must be one of options(levels, branches, all)
 //  branches  the branches the user can select (the same list given to options)
-//  all       true when the user has no branches of their own: $branches then means every branch ('*')
+//  all       true when the user has no branches of their own: $branches then means every branch ('*'),
+//            so it can be selected even when branches is empty. without all, an empty branches has no options
 //output: { '*': fallback, <entity>: rule, ... }
 //  one rule per entity that has a row for this branch in some level; the fallback '*' covers the others.
 //  the placeholders are replaced: $self is the selected branch, $branches is branches (or '*' with all).
@@ -420,7 +426,7 @@ const hasBranch = value => value === '*' || (Array.isArray(value) && value.some(
 //  in A, the fallback comes from the user, the nearest level; items comes from the group, because the user has no items row.
 //  in B, no level has an items row, so items uses the fallback.
 function resolve(levels, { branch, branches, all = false }) {
-    if (!options(levels, branches).includes(branch)) throw new Error(`access: '${branch}' is not an option`);
+    if (!options(levels, branches, all).includes(branch)) throw new Error(`access: '${branch}' is not an option`);
 
     const keys = keysOf(branch);
     const context = { '*': lookup(levels, keys, '*').value };
@@ -461,4 +467,4 @@ function resolveValue(value, { branch, branches, all }) {
     return value;
 }
 
-module.exports = { validate, level, chain, options, resolve, checkSchema, AccessError, MAX_LIST, FULL };
+module.exports = { validate, level, chain, options, resolve, checkSchema, AccessError, MAX_LIST, DEFAULT };
