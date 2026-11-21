@@ -15,13 +15,13 @@ const Auth = require('./auth');
 // ---------------------------------------------------------------------------
 
 // The schema is owned by the project; these tests use a generic one:
-//   items      enforced, branch column and a relation (owner)
+//   items      enforced (type 2), branch column and a relation (owner)
 //   owners     the related entity
 //   tags       no branch column
 //   members    a custom branch column (an EXISTS)
 //   shipments  a branch column with another name (origin) and two relations, for deeper paths
 const SCHEMA = {
-  items:     { enforced: true, table: '"store"."item"', columns: ['id', 'branch'], branch: 'branch', relations: { owner: 'owners' } },
+  items:     { enforced: true, type: 2, table: '"store"."item"', columns: ['id', 'branch'], branch: 'branch', relations: { owner: 'owners' } },
   owners:    { table: '"store"."owner"', columns: ['id', 'branch'], branch: 'branch' },
   tags:      { table: '"store"."tag"', columns: ['id'] },
   members:   { table: '"store"."member"', columns: ['id', 'branch'], branch: 'branch',
@@ -86,6 +86,10 @@ describe('Auth.schema: the methods of a service', () => {
       ['custom that is not a function', entity({ custom: { branch: 'x' } }), /things\.custom\.branch must be a function/],
       ['enforced not a boolean', entity({ enforced: 1 }), /things\.enforced must be a boolean/],
       ['an unknown property (typo)', entity({ relation: {} }), /things\.relation is not a property/],
+      ['type not an integer', entity({ type: '2' }), /things\.type must be an integer >= 2/],
+      ['type less than 2 (1 is the fallback)', entity({ type: 1 }), /things\.type must be an integer >= 2/],
+      ['type duplicated', { ...entity({ type: 2 }), others: { type: 2, table: '"store"."other"', columns: ['id'] } }, /others\.type 2 is already the type of 'things'/],
+      ['type missing on an enforced entity', entity({ enforced: true }), /things\.type is required when enforced/],
     ];
 
     for (const [title, schema, message] of cases) {
